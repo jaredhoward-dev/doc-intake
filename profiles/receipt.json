@@ -1,0 +1,106 @@
+{
+ "name": "receipt",
+ "description": "A purchase receipt: when it was paid, who was paid, the total, the tax and how it was paid. What was bought is left out: the user says what it was if it matters.",
+ "never": [
+  "card numbers (only the payment method type)",
+  "names",
+  "loyalty or member numbers",
+  "addresses"
+ ],
+ "default_group": "receipt",
+ "groups": {
+  "receipt": {
+   "global": true
+  }
+ },
+ "fields": [
+  {
+   "group": "receipt",
+   "name": "date",
+   "type": "date",
+   "labels": [
+    "transaction date",
+    "payment date",
+    "date paid",
+    "order date",
+    "purchase date",
+    "date"
+   ],
+   "not": [
+    "renewal",
+    "renews",
+    "expires",
+    "expiration",
+    "next bill",
+    "next payment",
+    "valid until",
+    "due date"
+   ],
+   "anywhere": true,
+   "document_date": true,
+   "required": true
+  },
+  {
+   "group": "receipt",
+   "name": "vendor",
+   "type": "org_name",
+   "labels": [
+    "from",
+    "merchant",
+    "sold by"
+   ],
+   "label_at_cell_start": true,
+   "from": "top",
+   "known_vendor": true,
+   "required": true
+  },
+  {
+   "group": "receipt",
+   "name": "total",
+   "type": "money",
+   "labels": [
+    "grand total",
+    "amount paid",
+    "total paid",
+    "order total",
+    "amount charged",
+    "total"
+   ],
+   "not": [
+    "subtotal",
+    "sub total",
+    "sub-total",
+    "savings",
+    "items"
+   ],
+   "required": true
+  },
+  {
+   "group": "receipt",
+   "name": "tax",
+   "type": "money",
+   "labels": [
+    "sales tax",
+    "tax"
+   ],
+   "not": [
+    "pre-tax",
+    "tax id",
+    "before tax",
+    "tax exempt"
+   ]
+  },
+  {
+   "group": "receipt",
+   "name": "payment_method",
+   "type": "pay_method",
+   "labels": [
+    "payment method",
+    "paid by",
+    "paid with",
+    "tender"
+   ],
+   "anywhere": true
+  }
+ ]
+}

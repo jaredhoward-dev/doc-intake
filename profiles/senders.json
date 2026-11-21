@@ -1,0 +1,66 @@
+{
+ "description": "An example known-senders map; every vendor and domain here is made up (.test domains). The engine checks \"vendors\" in order and the first match wins, so put a specific sender before a general one that would also match (a marketplace before its parent company). Each vendor has a \"name\" (the clean name the vendor field gets), \"domains\" (matched as whole domain names anywhere in the text) and \"patterns\" (regular expressions, case-insensitive). \"header_lines\": n looks only at the first n lines of page 1. \"kind\" tags an entry so only a profile field asking for that kind (\"known_vendor\": \"lender\") uses it; fields asking for any sender (\"known_vendor\": true) skip nothing. \"capture\": true takes the name from the pattern's first group instead of \"name\". \"stripe\" finds the business name on a hosted invoice (the cell before \"Bill to\") when no vendor matched; \"events\" finds an event's heading on a registration receipt. A host may add keys of its own to a vendor entry and read them with fields.sender_entry(name); the engine ignores them.",
+ "vendors": [
+  {
+   "name": "Example Cloud Marketplace",
+   "domains": [
+    "marketplace.example-cloud.test"
+   ],
+   "patterns": [
+    "\\bexample\\s+cloud\\s+marketplace\\b"
+   ],
+   "header_lines": 15
+  },
+  {
+   "name": "Example Cloud",
+   "domains": [
+    "example-cloud.test"
+   ],
+   "patterns": [
+    "\\bexample\\s+cloud\\s+services\\b"
+   ]
+  },
+  {
+   "name": "Sample Hardware Store",
+   "domains": [
+    "sample-hardware.test"
+   ],
+   "patterns": [
+    "\\bsample\\s+hardware\\s+store\\b"
+   ]
+  },
+  {
+   "name": "Demo Print Shop",
+   "domains": [
+    "demo-print.test"
+   ],
+   "patterns": [
+    "\\bdemo\\s+print\\s+shop\\b"
+   ]
+  },
+  {
+   "name": "Example Motor Credit",
+   "kind": "lender",
+   "domains": [
+    "example-motor-credit.test"
+   ],
+   "patterns": [
+    "\\bexample\\s+motor\\s+credit\\b"
+   ]
+  }
+ ],
+ "stripe": {
+  "markers": [
+   "\\bstripe\\b",
+   "\\breceipt\\s+number\\b"
+  ],
+  "bill_to": "\\bbill\\s+to\\b"
+ },
+ "events": {
+  "markers": [
+   "\\bregistration\\s+(?:fee|confirmation)\\b",
+   "\\bentry\\s+fee\\b"
+  ],
+  "heading": "\\b(?:marathon|half\\s+marathon|[0-9]+k|race|run|walk|ride)\\b"
+ }
+}
