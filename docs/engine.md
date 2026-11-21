@@ -129,7 +129,8 @@ Read these before trusting it:
   at most 25 MP per page. A file past a cap is reported as unscreened, never passed as safe. macOS does not let a
   process lower its address-space limit, so there the child runs without the memory cap and keeps the timeout,
   the OCR pixel cap and ImageMagick's own limits; a runaway read is stopped by the timeout or the OS, not at
-  1.5 GB. `scan` says so once a run ("N files read without a memory cap ..."), and `scan --profile-mem` shows
+  1.5 GB. `scan`, `fields`, `extract` and `preview --html` each say so once, at the end of the run, with a
+  count only ("N files read without a memory cap ...", one wording: `scan.Uncapped`), and `scan --profile-mem` shows
   `mem_cap=yes` or `no` for each file it read. Peak memory (`--profile-mem`) is reported in MB on both platforms.
 
 ## Requirements

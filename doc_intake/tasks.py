@@ -21,7 +21,7 @@ from .dates import document_date
 from .places import DocError, clean_part, inbox, inside, load_index, log_access, rel, root, save_index, state_dir
 from .places import write_private
 
-from .scan import HELD, hold
+from .scan import HELD, Uncapped, hold
 
 WARNING = ("WARNING: redaction is pattern-based and can miss things: names, addresses and phone numbers in other\n"
            "#   layouts than the detectors know, and numbers broken up by OCR errors, are not caught. The model pass,\n"
@@ -259,6 +259,7 @@ def cmd_fields(args, out=print):
                 open(fx.profile_path(prof["name"]), "rb").read()).hexdigest(),
             "sources": [], "values": [], "missing": [], "dropped": {}, "model": "off"}
     model = args.model or CFG.model()
+    uncapped = Uncapped()
     for name in args.files:
         p = resolve_record(name)
         doc = reader.read_bounded_or_fail(p)
@@ -290,6 +291,7 @@ def cmd_fields(args, out=print):
             task["dropped"][k] = task["dropped"].get(k, 0) + n
         if doc["notes"]:
             out(f"{os.path.basename(p)}: " + "; ".join(doc["notes"]))
+        uncapped.file_done()
     path = target or _task_path(prof["name"])
     if old:
         task["replaces"] = os.path.basename(old)
@@ -316,6 +318,7 @@ def cmd_fields(args, out=print):
         out(f"The user previews it in their own terminal: {CFG.cli} preview \"{os.path.basename(path)}\"")
         out(f"or as a page: {CFG.cli} preview --html \"{os.path.basename(path)}\"")
         out(f"then, once they have looked: {CFG.cli} approve \"" + os.path.basename(path) + "\"")
+    uncapped.note(out)
     return 0
 
 
@@ -654,6 +657,7 @@ def build_extract(p, pages, llm_check=False, model=None):
 def cmd_extract(args, out=print):
     pages = parse_pages(args.pages)
     model = args.model or CFG.model()
+    uncapped = Uncapped()
     for name in args.files:
         p = resolve_record(name)
         content, red, needs, flags, status = build_extract(p, pages, args.llm_check, model)
@@ -665,6 +669,8 @@ def cmd_extract(args, out=print):
             f"needs-review: {'yes' if needs else 'no'}; approved: no")
         out(f"The user looks at it in their own editor, then: {CFG.cli} approve \""
             + os.path.basename(dest) + "\"")
+        uncapped.file_done()
+    uncapped.note(out)
     return 0
 
 

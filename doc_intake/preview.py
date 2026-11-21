@@ -18,6 +18,7 @@ from . import detect, fields as fx, places, tasks
 from .config import CFG
 from .locate import build_snapshots
 from .places import DocError, rel, root, state_dir, write_private
+from .scan import Uncapped
 
 NO_AMOUNT = "no amount found — this may be a confirmation, not a receipt"
 
@@ -337,6 +338,7 @@ def cmd_preview(args, out=print):
     t = tasks._load_task(p)
     if getattr(args, "html", False):
         hp = preview_path(p)
+        uncapped = Uncapped()
         snaps = build_snapshots(t)
         write_private(hp, preview_html(t, os.path.basename(p), snaps=snaps,
                                        others=other_documents(os.path.basename(p), t["task"])))
@@ -359,6 +361,7 @@ def cmd_preview(args, out=print):
         if not args.no_open and has_display():
             subprocess.Popen(["xdg-open", hp], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
+        uncapped.note(out)
         return 0
     if t.get("superseded_by"):
         out(f"note: superseded by {t['superseded_by']}; approve that one instead")

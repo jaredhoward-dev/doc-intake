@@ -25,6 +25,29 @@ HELD = ".held"
 NO_PROFILE = "no profile: ask the user which fields are needed"
 
 
+class Uncapped:
+    """Every command that reads documents says once, at its end, how many files it read without the memory cap
+    (the platform refused it), in this one wording; counts only. Creating one resets reader's count, so each
+    command starts from zero. file_done() after each file counts it once however many bounded reads it took;
+    note() counts any reads since the last file_done() as one file each (scan, preview: one read per file)."""
+
+    def __init__(self):
+        reader.reset_uncapped()
+        self.files = 0
+        self._seen = 0
+
+    def file_done(self):
+        n = reader.uncapped_reads()
+        self.files += n > self._seen
+        self._seen = n
+
+    def note(self, out):
+        n = self.files + reader.uncapped_reads() - self._seen
+        if n:
+            out(f"\n{n} {'file' if n == 1 else 'files'} read without a memory cap (this platform refuses it); the "
+                "timeout and pixel caps still applied.")
+
+
 def screen(path, idx, known=None, batch=None, near=None, title_fn=None, route_opts=None):
     """known: {sha256: path} of the files already in the records (records_index); batch: {sha256: path} of the
     inbox files screened earlier in this run. A match in either makes this file a duplicate. near: [(path, text
@@ -151,7 +174,7 @@ def cmd_scan(args, out=print, route_opts=None):
         out(f"inbox is empty: {rel(inbox())}/")
         return 0
     prof = _profiler(args)
-    reader.reset_uncapped()
+    uncapped = Uncapped()
     known, near = fingerprints.records_index(out, retry_skipped=getattr(args, "retry_skipped", False), profile=prof)
     titles = load_titles()
     title_fn = _model_titles(args, out) if getattr(args, "llm_names", False) else None
@@ -183,10 +206,7 @@ def cmd_scan(args, out=print, route_opts=None):
     if unread:
         out(f"\n{unread} {'file' if unread == 1 else 'files'} not fully read (too large, timeout or OCR failure): "
             "UNSCREENED, not checked for sensitive data. Look at them yourself before filing.")
-    uncapped = reader.uncapped_reads()
-    if uncapped:
-        out(f"\n{uncapped} {'file' if uncapped == 1 else 'files'} read without a memory cap (this platform refuses "
-            "it); the timeout and pixel caps still applied.")
+    uncapped.note(out)
     dups = sum(r["status"] == "duplicate" for r in rows)
     if dups:
         out(f"\n{dups} exact {'copy' if dups == 1 else 'copies'} of a file already in {CFG.records_name} or earlier "

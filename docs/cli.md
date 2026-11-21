@@ -137,6 +137,7 @@ and only then does `read` return the approved fields as JSON, logging the read a
 `<state>/access.log`.
 
 On macOS a bounded read runs without the memory cap (macOS refuses it); the timeout, the OCR pixel cap
-and ImageMagick's own limits still apply. `scan` says once per run how many files it read without the
-cap, and `scan --profile-mem` shows `mem_cap=yes`, `no` or `-` (not read in a bounded child) per file.
+and ImageMagick's own limits still apply. `scan`, `fields`, `extract` and `preview --html` each say
+once per run how many files they read without the cap, and `scan --profile-mem` shows `mem_cap=yes`,
+`no` or `-` (not read in a bounded child) per file.
 See [engine.md](engine.md).
