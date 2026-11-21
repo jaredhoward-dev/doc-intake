@@ -694,3 +694,61 @@ def test_configure_profiles_dir_reaches_fields(tmp_path):
                                                                    "labels": ["total"]}]}))
     configure(profiles_dir=str(tmp_path))  # fresh_config (conftest) puts the host's back afterwards
     assert fx.profile_names() == ["only_one"]
+
+
+# ---------------------------------------------------------------- usage: a meter reading with its unit
+@pytest.mark.parametrize("text, want", [
+    ("1,234 kWh", "1,234 kWh"),
+    ("56.7 therms", "56.7 therms"),
+    ("1 therm", "1 therm"),
+    ("12 CCF", "12 CCF"),
+    ("3 hcf", "3 HCF"),
+    ("1.5 Mcf", "1.5 MCF"),
+    ("4,500 gallons", "4,500 gallons"),
+    ("45 gal.", "45 gal"),
+    ("12 kgal", "12 kgal"),
+    ("300 cubic feet", "300 cubic feet"),
+    ("7 cu ft", "7 cu ft"),
+    ("18 m3", "18 m3"),
+    ("2.25 Dth", "2.25 Dth"),
+    ("1234kwh", "1234 kWh"),            # the figure as printed, one space, the unit's usual spelling
+    ("0.5 KWH", "0.5 kWh"),
+])
+def test_usage_keeps_the_figure_with_its_unit(text, want):
+    assert _run(_one("usage", ["usage"]), f"Usage:   {text}\n") == ({"v": want}, {})
+
+
+@pytest.mark.parametrize("text", [
+    "742",                       # a bare figure: a reading needs its unit
+    "$742 kWh",                  # an amount, not a reading
+    "12345678901 kWh",           # an account number beside a unit word
+    "1234-5678 kWh",             # the tail of a dashed number
+    "1234 5678 kWh",             # or of a spaced one
+    "1234567 kWh",               # more than six digits without thousands commas
+    "0045123 gallons",           # a leading zero: a meter or account number
+    "1,234,567,890 kWh",         # more than nine digits with them
+    "7 kWhs",                    # a unit inside a longer word
+    "12.5% kWh",
+])
+def test_usage_never_takes_a_number_beside_a_unit(text):
+    got, _ = _run(_one("usage", ["usage"]), f"Usage:   {text}\n")
+    assert got == {}
+
+
+def test_usage_cut_from_a_longer_number_by_a_column_is_never_taken():
+    # The value-below rule reads only the label's column, a slice of the line that starts inside the meter number
+    # ("...5123 kWh"); the reading is checked again on the page, where the digits before it show it is no reading.
+    head = "Service         Usage\n"
+    text = head + "Meter No 0045123 kWh\n"
+    assert text[len(head) + head.index("Usage") - 4:].startswith("5123 kWh")  # where the column's slice starts
+    assert _run(_one("usage", ["usage"]), text) == ({}, {})
+    # the same layout with a real reading below the label is read in full, not as the slice's part of it
+    assert _run(_one("usage", ["usage"]), head + "Electric     1,234 kWh\n") == ({"v": "1,234 kWh"}, {})
+
+
+def test_usage_values_go_through_the_detectors(monkeypatch):
+    """Like every type: a reading that overlaps a detector's region is dropped and counted, never kept."""
+    text = "Usage:   1,234 kWh\n"
+    s = text.index("1,234")
+    monkeypatch.setattr(detect, "find_spans", lambda t: [(s, s + 9, "account", "")] if t == text else [])
+    assert _run(_one("usage", ["usage"]), text) == ({}, {"account": 1})

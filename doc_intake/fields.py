@@ -68,8 +68,17 @@ DATE = (r"(?:\d{1,2}/\d{1,2}/(?:\d{4}|\d{2})|\d{1,2}-\d{1,2}-\d{4}|\d{4}-\d{1,2}
 # "October 1 - October 31, 2026" (billing periods on invoices): the start's year comes from the end
 DATE_RANGE = re.compile(r"(?<![\w])(" + _MONTH + r"\s+\d{1,2})(?:\s*,?\s+(\d{4}))?\s*(?:-|–|—|to|through)\s*("
                         + _MONTH + r"\s+\d{1,2}\s*,?\s+\d{4})(?![\w])", re.I)
+# A metered amount with its unit ("1,234 kWh", "56.7 therms", "12 CCF", "4,500 gallons"): at most six digits before
+# the decimals (nine with thousands commas), no leading zero, and never the tail of a longer number (no digit, comma,
+# dot, dash, slash or # just before it, and no digit group a space before it), so an account or meter number beside a
+# unit word is never one. Extraction.offer checks that edge against the page itself, not a column's slice of it.
+_UNITS = {"kwh": "kWh", "mwh": "MWh", "ccf": "CCF", "hcf": "HCF", "mcf": "MCF", "dth": "Dth", "kgal": "kgal"}
+USAGE = (r"(?<![\d,.\-/#])(?<!\d\s)(?:[1-9]\d{0,2}(?:,\d{3}){1,2}|[1-9]\d{0,5}|0)(?:\.\d{1,3})?\s?"
+         r"(?:kwh|mwh|therms?|dekatherms?|dth|ccf|hcf|mcf|kgal|gallons?|gal\b\.?|cubic\s+(?:feet|foot|met(?:er|re)s?)"
+         r"|cu\.?\s?ft\b\.?|ft3|m3)")
 TYPES = {
     "money": MONEY,
+    "usage": USAGE,
     "percent": PERCENT,
     "cost": (r"(?:" + MONEY + r"|" + PERCENT + r")(?:\s*(?:copay|coinsurance))?"
              r"(?:\s*(?:after|before)\s+(?:the\s+)?deductible)?|no\s+charge|not\s+covered|covered\s+in\s+full"),
@@ -103,7 +112,7 @@ TYPES = {
     "plan_name": r"[A-Za-z0-9][A-Za-z0-9 &+/().,-]{1,59}",
 }
 # Types matched case-insensitively. The rest (codes, refs) are case-sensitive.
-_CI = {"cost", "date", "duration", "eligibility", "basis", "money_or_none", "plan_type", "pay_method", "policy_type",
+_CI = {"usage", "cost", "date", "duration", "eligibility", "basis", "money_or_none", "plan_type", "pay_method", "policy_type",
        "tooth_area", "currency", "form_1099", "weight_lbs"}
 _RX = {t: re.compile(r"(?<![\w$])(?:" + p + r")(?![\w%])", re.I if t in _CI else 0) for t, p in TYPES.items()}
 _FULL = {t: re.compile(r"(?:" + p + r")", re.I if t in _CI else 0) for t, p in TYPES.items()}
@@ -268,6 +277,11 @@ def normalize(ftype, v):
         return v.lower()
     if ftype == "weight_lbs":
         return re.sub(r"\D", "", v)
+    if ftype == "usage":  # "1,234kwh" -> "1,234 kWh": the figure as printed, one space, the unit's usual spelling
+        m = re.match(r"([\d,]+(?:\.\d+)?)\s*(.+)", v)
+        if m:
+            unit = " ".join(m.group(2).split())
+            return f"{m.group(1)} {_UNITS.get(unit.lower(), unit.lower())}"
     if ftype in TITLE_CASE:
         # "EXAMPLE MAKE" -> "Example Make"; short or alphanumeric words (XLE, SR5, A4, F-150) as printed
         return " ".join(w.title() if (w.isalpha() and len(w) > 3 and (w.isupper() or w.islower()))
@@ -597,6 +611,13 @@ class Extraction:
         user marked this value wrong (a rejection), so a rule that takes its first find goes on to the next."""
         if (group, field) not in self.allowed:
             return  # allowlist: never a field the profile doesn't name
+        if ftype == "usage" and span:
+            # a column's slice can cut a reading out of a longer number ("...901 kWh"): match again on the page, where
+            # the type's edge rule sees what really comes before, and take the whole reading from there
+            m = _RX["usage"].match(dict(self.pages).get(page, ""), span[0])
+            if not m:
+                return
+            value, span = m.group(0), (m.start(), m.end())
         if span and any(span[0] < e and s < span[1] for s, e, _, _ in spans):
             s, e, k = next((s, e, k) for s, e, k, _ in spans if span[0] < e and s < span[1])
             if (page, s, e) not in self.dropped_at:  # several labels or rules can reach the same value

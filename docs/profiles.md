@@ -126,6 +126,7 @@ at the top of `fields.py`.
 | Type | Matches |
 | --- | --- |
 | `money` | `$1,234.56`, `12.00`, up to four decimals |
+| `usage` | a meter reading with its unit: `1,234 kWh`, `56.7 therms`, `12 CCF`, `4,500 gallons`, `300 cubic feet` (also MWh, HCF, MCF, Dth, kgal, gal, cu ft, m3); stored as the figure, one space and the unit (`1234kwh` gives `1234 kWh`) |
 | `percent` | `3.875 %` |
 | `date` | `03/14/2030`, `2030-03-14`, `Mar 14, 2030`; stored as `YYYY-MM-DD` |
 | `currency` | `USD`, `EUR`, `GBP`, ...; an `anywhere` currency field with no other value falls back to USD when the text has a `$` |
@@ -136,7 +137,10 @@ at the top of `fields.py`.
 | `short_text`, `plan_name` | short free text, taken only as a whole cell |
 
 Free-text types (`org_name`, `short_text`, `plan_name`) never hold three or more digits in a row, so street
-numbers, ZIP codes and IDs stay out. `fields.py` lists the rest (`cost`, `limit`, `duration`, `policy_type`, ...).
+numbers, ZIP codes and IDs stay out. A `usage` figure has at most six digits (nine with thousands commas) and no
+leading zero, and is never the tail of a longer number (a digit, comma, dot, dash, slash or `#` just before it, or a
+group of digits a space before it), checked against the page itself, so an account or meter number printed beside a
+unit word is never a reading. Like every type's, a `usage` value is still checked against the detectors. `fields.py` lists the rest (`cost`, `limit`, `duration`, `policy_type`, ...).
 A host adds its own types with `fields.register_type(name, pattern)` before loading a profile that uses them.
 
 ## Groups
@@ -205,9 +209,9 @@ A host may keep its own keys in a vendor entry (a filing suggestion, say) and re
 ## The utility bill example
 
 `utility_bill.json` takes the provider, the statement date, the service period, the due date, the amount due, the
-previous balance and the payments received. Its `never` list (account numbers, service addresses, customer names,
-meter numbers) has no field that could hold any of them, and the detectors drop an account number that lands where
-a field's value goes. It shows three things the first two examples don't:
+previous balance, the payments received and the usage with its unit. Its `never` list (account numbers, service
+addresses, customer names, meter numbers) has no field that could hold any of them, and the detectors drop an account
+number that lands where a field's value goes. It shows four things the first two examples don't:
 
 - **Values below labels.** Many bills print a row of labels with the values on the line below
   (`Bill Date   Due Date`, then the dates). The same profile reads that layout and the labels-and-values-on-one-line
@@ -219,9 +223,10 @@ a field's value goes. It shows three things the first two examples don't:
   (`"due date"` on the statement date) then throws out the whole header row. The utility bill relies on longer
   labels winning instead: "Due Date" belongs to `due_date`, so the statement date's `"date"` label never matches
   inside it.
-
-Usage (kWh, gallons, therms) is left out: no built-in type holds a reading with its unit. A host that wants it
-registers a type with `fields.register_type` and adds the field in its own copy.
+- **Usage with its unit.** The `usage` field (type `usage`) takes `742 kWh` or `4,500 gallons`, never a bare figure.
+  It sets `label_at_cell_start`, so "usage" counts only at the start of a cell: "Average Daily Usage" and "Previous
+  Usage" never give the bill's usage. It has no `not` list, since a `not` word anywhere in a row of labels would
+  throw out the whole row.
 
 ## Checking a profile
 

@@ -148,6 +148,8 @@ def test_example_profiles_drop_detector_values(examples):
         assert not any(fake in value for fake in FAKES), value
 
 
+METER = "0045123"  # a made-up meter number: no field may take it
+
 # Two fake utility bills from made-up providers on .test domains, in the two layouts bills come in: labels with their
 # values on the same line, and a row of labels with the values on the line below. Each carries an account number and
 # a service address the profile must never return.
@@ -164,6 +166,10 @@ Previous Balance                 $84.20
 Payment Received - Thank You     $84.20
 Current Charges                  $91.37
 Total Amount Due                 $91.37
+
+Meter Number:      M-{METER}
+Total Usage:       742 kWh
+Average Daily Usage                24 kWh
 """
 
 UTILITY_BELOW = f"""Sample Water District
@@ -180,18 +186,23 @@ Service From            Service To
 
 Previous Balance        Payments           Amount Due
 $40.10                  $40.10             $38.65
+
+Meter Number            Water Used         Previous Usage
+{METER}                  4,500 gallons      4,320 gallons
 """
 
-UTILITY_NEVER = (ACCOUNT, "Sample Lane", "Example Road", "100 ", "200 ")
+UTILITY_NEVER = (ACCOUNT, METER, "Sample Lane", "Example Road", "100 ", "200 ")
 
 
 @pytest.mark.parametrize("text, want", [
     (UTILITY_SAME_LINE, {"provider": "Example Power & Light", "statement_date": "2030-11-05",
                          "period_start": "2030-10-03", "period_end": "2030-11-02", "due_date": "2030-11-26",
-                         "amount_due": "$91.37", "previous_balance": "$84.20", "payments_received": "$84.20"}),
+                         "amount_due": "$91.37", "previous_balance": "$84.20", "payments_received": "$84.20",
+                         "usage": "742 kWh"}),
     (UTILITY_BELOW, {"provider": "Sample Water District", "statement_date": "2030-12-01",
                      "period_start": "2030-10-28", "period_end": "2030-11-27", "due_date": "2030-12-22",
-                     "amount_due": "$38.65", "previous_balance": "$40.10", "payments_received": "$40.10"}),
+                     "amount_due": "$38.65", "previous_balance": "$40.10", "payments_received": "$40.10",
+                     "usage": "4,500 gallons"}),
 ], ids=["same-line", "below"])
 def test_fake_utility_bills_give_their_fields(examples, text, want):
     got, prof, dropped = _values("utility_bill", text)
@@ -210,7 +221,7 @@ def test_utility_bill_never_takes_account_or_address(examples):
     names = {f["name"] for f in prof["fields"]}
     for word in ("account", "address", "customer", "meter", "name"):
         assert not any(word in n for n in names), word
-    assert all(f["type"] in ("date", "money", "org_name") for f in prof["fields"])
+    assert all(f["type"] in ("date", "money", "org_name", "usage") for f in prof["fields"])
     # an account number where the payments figure goes (a misread row): "money" can't hold it whole, and the
     # detector drops any piece that overlaps it
     text = UTILITY_SAME_LINE.replace("Payment Received - Thank You     $84.20",
@@ -220,6 +231,23 @@ def test_utility_bill_never_takes_account_or_address(examples):
     assert sum(dropped.values()) == 1
     for value in got.values():
         assert not any(fake in value for fake in FAKES), value
+
+
+@pytest.mark.parametrize("line", [
+    f"Total Usage:       {ACCOUNT} kWh",          # an account number beside a unit word
+    f"Total Usage:       {ACCOUNT[:4]}-{ACCOUNT[4:8]} kWh",  # never the tail of a dashed number
+    f"Total Usage:       {ACCOUNT[:4]} {ACCOUNT[4:8]} kWh",  # nor of a spaced one
+    f"Total Usage:       {METER}{METER} gallons",  # more digits than a reading has
+    "Total Usage:       742",                      # a bare figure: a reading needs its unit
+])
+def test_utility_usage_never_takes_a_number_beside_a_unit(examples, line):
+    """The usage type holds a figure with its unit only: never an account or meter number that a unit word follows,
+    nor a piece of one. With nothing else to take, the usage is missing."""
+    text = re.sub(r"Total Usage:.*\n.*\n", line + "\n", UTILITY_SAME_LINE)  # and no other reading on the bill
+    got, _, _ = _values("utility_bill", text)
+    assert "usage" not in got
+    for value in got.values():
+        assert not any(bit in value for bit in (*FAKES, METER, ACCOUNT[:4], ACCOUNT[4:8])), value
 
 
 def test_example_routes_send_utility_bills_to_their_profile():
@@ -233,3 +261,13 @@ def test_example_routes_send_utility_bills_to_their_profile():
                           (INVOICE, "invoice")):
         assert cli.classify(rules, text)["profile"] == profile
     assert cli.classify(rules, RECEIPT) is None
+
+
+def test_utility_usage_is_never_an_average_or_a_past_reading(examples):
+    """"usage" is a label only at the start of a cell, so "Average Daily Usage" and "Previous Usage" never give the
+    bill's usage, on one line or as a row of labels with the readings below."""
+    for tail in ("Average Daily Usage:   24 kWh\nPrevious Usage:   700 kWh\n",
+                 "Average Daily Usage     Previous Usage\n24 kWh                  700 kWh\n"):
+        text = re.sub(r"Meter Number:.*", "", UTILITY_SAME_LINE, flags=re.S) + tail
+        got, _, _ = _values("utility_bill", text)
+        assert "usage" not in got
