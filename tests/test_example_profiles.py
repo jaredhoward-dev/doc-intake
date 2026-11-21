@@ -10,6 +10,7 @@ import pytest
 import doc_intake
 import host
 from doc_intake import fields as fx
+from helpers import ACCOUNT, CARD, FAKES
 
 PROFILES = os.path.join(os.path.dirname(host.HERE), "profiles")
 SENDERS = os.path.join(PROFILES, "senders.json")
@@ -128,3 +129,20 @@ def test_lender_kind_only_matches_a_kind_field(examples):
     assert fx.known_vendor(page) == ("Example Motor Credit", 1, "known sender")
     assert fx.known_vendor(page, "lender") == ("Example Motor Credit", 1, "known sender")
     assert fx.known_vendor([(1, "Demo Print Shop\n")], "lender") is None
+
+
+def test_example_profiles_drop_detector_values(examples):
+    """A card number on the receipt's payment lines and an account number in the invoice-number spot never come
+    back: the payment method keeps only its type, and a value overlapping a detected number is dropped and counted
+    by kind."""
+    receipt = RECEIPT.replace("Payment Method:   Visa", f"Payment Method:   Visa {CARD}\nAmount Charged:   {CARD}.00")
+    got, _, dropped = _values("receipt", receipt)
+    assert got["payment_method"] == "card"  # pay_method can't hold digits: the card is never a candidate
+    assert dropped == {"card": 1}  # "amount charged" outranks "total", so its card-number "amount" is offered
+    assert got["total"] == "$22.14"  # and the next label down gives the real total
+    invoice = INVOICE.replace("DP-20300401", ACCOUNT)
+    got_inv, _, dropped_inv = _values("invoice", invoice)
+    assert "invoice_number" not in got_inv
+    assert sum(dropped_inv.values()) == 1
+    for value in list(got.values()) + list(got_inv.values()):
+        assert not any(fake in value for fake in FAKES), value
