@@ -7,6 +7,7 @@ Every value here is fake (see tests/helpers.py).
 import json
 import os
 import random
+import re
 import shutil
 
 import pytest
@@ -98,6 +99,35 @@ def test_dotted_card_needs_luhn_and_card_groups():
               "4111.1111", "1234.5678.90"):
         assert detect.find_spans(t) == [], t
     assert "card" not in detect.counts(detect.find_spans("pi 3.14159265358979"))
+    assert detect.find_spans("build 2024.1234.5678.9") == []  # dotted 13 digits failing Luhn: too short to hide
+
+
+def _card_only(text):
+    red, c = detect.redact(text)
+    return c, re.sub(r"\[CARD-last4:\d{4}\]", "", red)
+
+
+@pytest.mark.parametrize("text", [
+    "Visa,4111.1111.1111.1111,12/30",  # a CSV row with the expiry after it
+    "card 4111.1111.1111.1111.12/30",
+    "1,4111.1111.1111.1111",
+    "4111.1111 1111 1111", "4111-1111.1111-1111", "4111 1111.1111 1111",  # mixed separators
+    "card 4111 1111 1111 1111 12/30",
+    "4000.0000.0000.0000.006",  # 19-digit Visa
+    "Diners 3600.000000.0008",  # 4-6-4
+    "4222.2222.2222.2",  # 13-digit Visa, 4-4-4-1
+    "1.4111.1111.1111.1111",  # a list number glued on: the card is still cut out
+    "4111.1111.1111.1111.5",  # a trailing digit group is cut off the card
+])
+def test_card_in_a_run_of_groups_is_cut_out_and_redacted(text):
+    c, rest = _card_only(text)
+    assert c == {"card": 1}, text
+    assert not re.search(r"\d{3}", rest), text  # nothing but a stray list or expiry digit or two is left
+
+
+@pytest.mark.parametrize("text", ["4000.0000.0000.0000.007", "3782.822463.10006", "Order 2030.1111.2222.3333"])
+def test_grouped_digits_failing_luhn_are_a_number_not_a_card(text):
+    assert detect.counts(detect.find_spans(text)) == {"long-number": 1}
 
 
 def test_ssn_rules():
@@ -116,13 +146,15 @@ def test_redaction_leaves_no_fake_value():
     text = "\n".join([f"SSN {SSN}", f"Card {CARD_SPACED}", f"Routing {ROUTING} Account {ACCOUNT}",
                       "DOB: 01/02/1980", f"Medicare {MBI}", "Passport No. C12345678", "Member ID: XYZ123456789",
                       "Employee ID 00123456", f"EIN {EIN}", "someone@example.com",
-                      "Visa 5555.5555.5555.4444", "Amex 3782.822463.10005"])
+                      "Visa 5555.5555.5555.4444", "Amex 3782.822463.10005",
+                      "Visa,6011.1111.1111.1117,12/30", "Mixed 5555 5555.5555-4444"])
     red, c = detect.redact(text)
-    for v in FAKES[:-1] + ["5555.5555", "822463", "10005"]:
+    for v in FAKES[:-1] + ["5555.5555", "822463", "10005", "6011", "5555 5555"]:
         assert v not in red
     assert "[CARD-last4:1111]" in red and "[ACCOUNT-last4:8901]" in red and "[SSN]" in red
-    assert "Visa [CARD-last4:4444]\n" in red and red.endswith("Amex [CARD-last4:0005]")
-    assert c["ssn"] == 1 and c["card"] == 3
+    assert "Visa [CARD-last4:4444]\n" in red and "Amex [CARD-last4:0005]\n" in red
+    assert "Visa,[CARD-last4:1117],12/30" in red and "Mixed [CARD-last4:4444]" in red
+    assert c["ssn"] == 1 and c["card"] == 5
 
 
 # ---------------------------------------------------------------- scan and held
