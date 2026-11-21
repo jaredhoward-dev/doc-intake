@@ -1,6 +1,6 @@
 {
  "name": "utility_bill",
- "description": "A utility bill (power, gas, water, internet): who sent it, the statement date, the service period, the due date, the amount due, the previous balance and the payments received. Usage is left out: no value type holds a reading with its unit. Never the account number, service address, customer name or meter number.",
+ "description": "A utility bill (power, gas, water, internet): who sent it, the statement date, the service period, the due date, the amount due, the previous balance, the payments received and the usage with its unit (kWh, therms, CCF, gallons). Never the account number, service address, customer name or meter number.",
  "never": [
   "account numbers",
   "service addresses",
@@ -137,6 +137,24 @@
     "payment - thank you",
     "payment thank you"
    ]
+  },
+  {
+   "group": "bill",
+   "name": "usage",
+   "type": "usage",
+   "labels": [
+    "total usage",
+    "billed usage",
+    "usage",
+    "total consumption",
+    "consumption",
+    "energy used",
+    "kwh used",
+    "gas used",
+    "water used",
+    "amount used"
+   ],
+   "label_at_cell_start": true
   }
  ]
 }

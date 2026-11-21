@@ -66,11 +66,14 @@ wrong steers what `fields` takes, so the assistant never runs it; it can point a
 command. `wrong` adds a rejection to the task file's `rejected` list: the source's sha256, the field (group,
 plan, row, name), its page, its matched label and its character span on the page. It never stores the value or
 any text (the task file already holds the value; the span is the one `where` holds). Then it re-reads that one
-document only and extracts again with each rejected spot blanked to spaces, so the extractor takes the next
-candidate for that field by its usual rules (which can be another wrong value: the user previews it like any
-other) or leaves it missing; a record that still lands on a rejected spot (a known sender has
-no span to blank: it matches on page and label) is dropped, and one that lands on a detector's region of the
-unblanked text is dropped and counted as fields does. The other documents' values are carried over unchanged, and
+document only and extracts again with the rejections handed to the extractor, which turns a rejected candidate away
+before ranking it, so the field takes its next-best candidate by its usual rules (which can be another wrong value:
+the user previews it like any other) and is missing only when no other candidate exists. A candidate is rejected
+when it is the same field (group, plan, row, name) and either the same candidate (the same page and label at an
+overlapping spot; a known sender whose name is not printed has no spot, so it matches on page and label) or the
+same value, read back from the page at the rejected spot, whatever label or spot reached it. The text is never
+changed, so a rejection never moves another field's value, and a record on a detector's region is still dropped and
+counted as fields does. The other documents' values are carried over unchanged, and
 values the local model filled for that document are kept unless marked (`wrong` runs no model). The result is a
 new, unapproved task: it overwrites an unapproved task in place, and an approved one is kept, marked superseded
 and replaced by a `-vN` file, exactly as `fields --replaces` does. Approval never carries over: the user previews
