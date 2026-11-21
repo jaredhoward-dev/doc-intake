@@ -5,6 +5,8 @@ account, license and SSN labels, every joiner), every digit the frozen copy hid,
 redact's re-scans, is hidden by doc_intake.detect too, and no last-four tag shows a digit of a valid SSN shape. All
 values are fake: test card numbers, and SSN shapes built at run time.
 """
+import hashlib
+import pathlib
 import random
 import re
 
@@ -21,9 +23,11 @@ ITIN = _ssn("912", "70", "1234")
 PIECES = SSNS + [ITIN, _ssn("666", "45", "6789"), "4111-1111-1111-1111", "4111111111111111", "5555 5555 5555 4444",
                  "4111-1111-1111-1112", "4111 1111 1111 1111 912", "12345678901", "9999999999", "1234567890",
                  "123456789", "12345", "12345678", "30722", "2030", "12/29", "01/02/1990", "12.50", "3.00", "912",
-                 "12-3456789", "212-555-0142", "111111118", "someone@example.com", "@example.com", "1234 5678 9012"]
+                 "12-3456789", "212-555-0142", "111111118", "someone@example.com", "@example.com", "1234 5678 9012",
+          "1M8GDM9AXKP042788", "X1234567", "hunter22", "abcdEFGH12345678", "12 Elm Street\nSpringfield, IL 62704"]
 LABELS = ["Account: ", "Acct # ", "SSN: ", "SSN ", "TIN: ", "Social Security Number: ", "Driver license ", "DL ",
-          "DOB: ", "EIN ", "Phone ", "Card ", "Ref ", "Member ID ", "someone", ""]
+          "DOB: ", "EIN ", "Phone ", "Card ", "Ref ", "Member ID ", "someone", "Password: ", "Client secret: ",
+          "Passport ", "VIN ", "Address: ", ""]
 JOINS = ["-", "-", ".", " ", "/", "--", "- ", "", "\n"]
 
 
@@ -83,7 +87,7 @@ def _ssn_shapes(text):
 
 
 def _tag_free_digits(red):
-    return re.sub(r"\D", "", re.sub(r"\[[A-Z0-9-]+(?::\d{4})?\]", "", red))
+    return re.sub(r"\D", "", re.sub(r"\[[A-Z0-9-]+(?:-last4:\d{4})?\]", "", red))
 
 
 def _is_subsequence(small, big):
@@ -162,3 +166,17 @@ def test_reported_shapes_hide_at_least_what_round_five_hid():
     # a decimal after the SSN is left whole, not cut into a hidden number and a visible .50
     red, _ = detect.redact("SSN: " + _s() + "-12.50/3.00")
     assert red == "SSN: [SSN]-12.50/3.00", red
+
+
+def test_tag_free_digits_strips_last_four_tags():
+    assert _tag_free_digits("x [CARD-last4:1111] [ACCOUNT-last4:6789] [SSN] 7") == "7"
+
+
+# sha256 of tests/_detect_r5.py below its two header lines, which equals `git show 0ffa68e:doc_intake/detect.py`.
+FROZEN_SHA256 = "23da32b79fdb42bba07c00f79bb7878424534869a849d07131703df3b5f4aad8"
+
+
+def test_frozen_copy_is_still_round_five():
+    """The baseline can't be weakened quietly: the frozen copy must stay byte-for-byte the round-5 detector."""
+    lines = (pathlib.Path(__file__).parent / "_detect_r5.py").read_text(encoding="utf-8").splitlines(keepends=True)
+    assert hashlib.sha256("".join(lines[2:]).encode()).hexdigest() == FROZEN_SHA256
