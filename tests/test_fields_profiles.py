@@ -14,6 +14,7 @@ import re
 import pytest
 
 from doc_intake import detect, fields as fx
+from helpers import CARD, ROUTING, SSN
 
 # ---------------------------------------------------------------- closing_disclosure
 LOAN_ID = "9876543210"
@@ -526,6 +527,126 @@ def test_box_row_never_gives_a_figure_to_a_neighbouring_header(vehicle):
                           (75, "$39,112.88")) + "\n" + tail
     got = _til(prof, two)
     assert "finance_charge" not in got and got["total_of_payments"]["value"] == "$36,612.88"
+
+
+# ---------------------------------------------------------------- what the new rules may reach: sensitive values
+def _one(ftype, labels, **opts):
+    """A one-field profile: field "v" of type ftype in a global group."""
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True}},
+            "fields": [{"group": "g", "name": "v", "type": ftype, "labels": labels, **opts}]}
+    fx.check_profile(prof)
+    return prof
+
+
+def _run(prof, text):
+    """{field: value} and the dropped counts. Tests assert on these, never print a value."""
+    recs, dropped, _ = fx.extract(prof, [(1, text)], "x")
+    return {r["field"]: r["value"] for r in recs}, dropped
+
+
+BUYER = [["buyer signs", "line"]]
+
+
+def test_a_line_label_near_never_takes_a_sensitive_neighbour():
+    date = _one("date", BUYER)
+    assert _run(date, "Buyer Signs X  Pat Example\nDOB 07/11/1990\n") == ({}, {"dob": 1})
+    assert _run(date, "DOB 07/11/1990\nBuyer Signs X  Pat Example\n") == ({}, {"dob": 1})
+    assert _run(date, "Buyer Signs X  Pat Example\nAcct 12-31-2030\n") == ({}, {"account": 1})
+    # the label's own line has the date: the DOB below is never looked at
+    assert _run(date, "Buyer Signs X  Pat Example  Date 07/11/2031\nDOB 07/11/1990\n") == ({"v": "2031-07-11"}, {})
+    ref = _one("ref", BUYER)
+    for value, kind in ((CARD, "card"), (ROUTING, "routing"), ("VIN 1M8GDM9AXKP042788", "vin")):
+        assert _run(ref, f"Buyer Signs X\n{value}\n") == ({}, {kind: 1}), kind
+    assert _run(_one("count", BUYER), f"Buyer Signs X\nSSN {SSN}\n") == ({}, {"ssn": 1})
+
+
+def test_a_sensitive_nearest_neighbour_blanks_the_field():
+    # Fails closed: the nearest value is sensitive, so the field stays empty rather than reaching past it to a
+    # clean date further away, or to one the same distance below (above wins a tie).
+    date = _one("date", BUYER)
+    assert _run(date, "Buyer Signs X\nDOB 07/11/1990\n          07/11/2031\n") == ({}, {"dob": 1})
+    assert _run(date, "DOB 07/11/1990\nBuyer Signs X\n          07/11/2031\n") == ({}, {"dob": 1})
+
+
+def test_one_sensitive_value_reached_twice_counts_once():
+    # "sale date" (value below) and "buyer signs" (nearest line) both reach the same DOB
+    prof = _one("date", ["sale date", ["buyer signs", "line"]])
+    assert _run(prof, "Sale Date      Buyer Signs X\nDOB 07/11/1990\n") == ({}, {"dob": 1})
+
+
+def _boxes(first, second):
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True, "box_row": True}},
+            "fields": [{"group": "g", "name": "first", "type": "ref", "labels": ["first box"]},
+                       {"group": "g", "name": "second", "type": "ref", "labels": ["second box"]}]}
+    fx.check_profile(prof)
+    got, dropped = _run(prof, "First Box            Second Box\n" + first.ljust(21) + second + "\n")
+    return sorted(got), dropped
+
+
+def test_box_row_never_takes_a_sensitive_figure():
+    assert _boxes(CARD, "R-55123") == (["second"], {"card": 1})
+    assert _boxes(ROUTING, "123456789") == (["second"], {"routing": 1})  # 123456789 fails the ABA check
+
+
+@pytest.mark.xfail(strict=True, reason="dotted card digits are not detected (detect.py); next round")
+def test_a_dotted_card_number_is_never_a_money_value():
+    got, dropped = _run(_one("money", [["total due", "line"]]), "Total Due  4111.1111.1111.1111\n")
+    assert got == {} and dropped == {"card": 1}
+
+
+# ---------------------------------------------------------------- edge cases of the nearest-line and box rules
+def test_near_skips_not_and_renewal_words_and_looks_two_lines_only():
+    assert _run(_one("date", BUYER, **{"not": ["beginning"]}),
+                "Buyer Signs X\nMonthly beginning 08/25/2031\n") == ({}, {})
+    renewal = "Buyer Signs X\nRenewal 08/25/2031\n"
+    assert _run(_one("date", BUYER, document_date=True), renewal) == ({}, {})
+    assert _run(_one("date", BUYER), renewal) == ({"v": "2031-08-25"}, {})  # the skip is document_date's
+    date = _one("date", BUYER)
+    assert _run(date, "Buyer Signs X\nPat Example\n4A3B2C1D\n07/11/2031\n") == ({}, {})  # three lines away
+    assert _run(date, "Buyer Signs X\nPat Example\n07/11/2031\n") == ({"v": "2031-07-11"}, {})  # two
+
+
+def test_near_never_takes_free_text():
+    assert _run(_one("short_text", BUYER), "Buyer Signs X\nPat Example\n") == ({}, {})
+
+
+def test_near_prefers_the_nearer_line_and_above_on_a_tie():
+    date = _one("date", BUYER)
+    assert _run(date, "07/10/2031\nBuyer Signs X\n07/12/2031\n") == ({"v": "2031-07-10"}, {})
+    assert _run(date, "07/10/2031\nPat Example\nBuyer Signs X\n07/12/2031\n") == ({"v": "2031-07-12"}, {})
+
+
+def test_a_line_label_is_refused_in_a_per_plan_group():
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"per_plan": True}},
+            "fields": [{"group": "g", "name": "v", "type": "date", "labels": BUYER}]}
+    with pytest.raises(fx.ProfileError, match="per_plan"):
+        fx.check_profile(prof)
+
+
+def _money_boxes(n=2, box_row=True):
+    names = ("first", "second", "third")[:n]
+    return {"name": "t", "default_group": "g", "groups": {"g": {"global": True, "box_row": box_row}},
+            "fields": [{"group": "g", "name": k, "type": "money", "labels": [f"{k} box"]} for k in names]}
+
+
+def test_box_row_header_block_stops_at_eight_lines():
+    filler = "some words           more words\n"
+    page = "First Box            Second Box\n{}\n$12.00               $34.00\n"
+    assert _run(_money_boxes(), page.format(filler * 7)) == ({"first": "$12.00", "second": "$34.00"}, {})
+    assert _run(_money_boxes(), page.format(filler * 8)) == ({}, {})  # the header is the ninth line up
+
+
+def test_box_row_figures_with_no_header_above():
+    assert _run(_money_boxes(), "$12.00               $34.00\n\nFirst Box            Second Box\n") == ({}, {})
+
+
+def test_box_row_empty_box_is_not_filled_from_below():
+    page = ("First Box      Second Box      Third Box\n"
+            "the cost       the amount      the total\n"
+            "$12.00                         $56.00\n")
+    # without the key, the value-below window under "Second Box" reaches the third box's figure
+    assert _run(_money_boxes(3, box_row=False), page)[0].get("second") == "$56.00"
+    assert _run(_money_boxes(3), page) == ({"first": "$12.00", "third": "$56.00"}, {})
 
 
 # ---------------------------------------------------------------- auto_loan_statement

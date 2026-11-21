@@ -27,6 +27,7 @@ Per-field options for forms laid out in fixed columns (the Closing Disclosure):
   with no value on its line it takes the nearest one within two non-empty lines above or below, never on or past
   another "line" label's line (an e-signature stamp is taller than a line of text, so its date can sit just above or
   below; the seller's line below must not give the buyer's date), ahead of the next label but behind its own line's;
+  a "line" label is refused in a per_plan group (a signature's date belongs to no plan);
 - "each": true keeps every matching line as its own row (several "Title -" charges), not just the first;
 - "anywhere": "earliest" (dates) falls back to the earliest plausible date in the text, not the first one;
 - "link_month": 0 or 1 (dates) takes the first or last day of the month a link's query names ("...?year=2030&month=9",
@@ -198,6 +199,10 @@ def check_profile(prof):
         if key in seen:
             raise ProfileError(f"{prof['name']}: duplicate field {f['group']}.{f['name']}")
         seen.add(key)
+        if groups[f["group"]].get("per_plan") and any(not isinstance(lab, str) and lab[1] == "line"
+                                                       for lab in f.get("labels", [])):
+            raise ProfileError(f"{prof['name']}: field {f['name']} has a \"line\" label in per_plan group "
+                               f"{f['group']}: a signature line's value belongs to no plan")
     for t in prof.get("tables", []):
         for c in t["columns"]:
             if c["type"] not in TYPES:
@@ -543,13 +548,16 @@ class Extraction:
         # document dates (when the money moved): never a renewal or expiry date, never more than 60 days ahead
         self.doc_dates = {(f["group"], f["name"]) for f in prof.get("fields", []) if f.get("document_date")}
         self.rows = {}        # field name -> rows taken so far ("each" fields)
+        self.dropped_at = set()  # spans already counted in dropped: one sensitive value counts once
 
     def offer(self, group, plan, row, field, ftype, value, page, label, src, span=None, spans=(), rank=0, order=0):
         if (group, field) not in self.allowed:
             return  # allowlist: never a field the profile doesn't name
         if span and any(span[0] < e and s < span[1] for s, e, _, _ in spans):
-            k = next(k for s, e, k, _ in spans if span[0] < e and s < span[1])
-            self.dropped[k] = self.dropped.get(k, 0) + 1
+            s, e, k = next((s, e, k) for s, e, k, _ in spans if span[0] < e and s < span[1])
+            if (page, s, e) not in self.dropped_at:  # several labels or rules can reach the same value
+                self.dropped_at.add((page, s, e))
+                self.dropped[k] = self.dropped.get(k, 0) + 1
             return
         value = normalize(ftype, value)
         if not value or (field in VALIDATORS and not VALIDATORS[field](value)):
@@ -988,7 +996,8 @@ def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, c
             # One-line form rows (each, column_before) never read a value from the lines below: a blank row's
             # value would come from the next row.
             if not got and own_line:
-                _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order)
+                _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order,
+                      row)
             elif not got and not (len(targets) > 1) and not (f.get("each") or f.get("column_before")) \
                     and f["name"] not in boxed:  # a box row's column rule owns what sits below its header
                 _below(ex, g, (targets[0] if per_plan else None), f, ftype, lines, offs, i, s, end, idx, pno,
@@ -997,7 +1006,7 @@ def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, c
                 ex.rows[f["name"]] = row
 
 
-def _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order):
+def _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order, row=None):
     """A [label, "line"] label with no value on its line: an e-signature stamp ("DocuSigned by:", the signer's
     name, an envelope ID) is taller than one line of text, so the date beside the signature lands on a line just
     above or below the label's. Take the nearest value within two non-empty lines either way, never on or past a
@@ -1033,7 +1042,7 @@ def _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, 
             j += step
     if found:
         _, _, c = min(found, key=lambda x: (x[0], x[1]))  # nearest; above first on a tie (the stamp's top line)
-        _take(ex, g, None, f, ftype, c, 0, pno, label, src, spans, rank + 0.5, order)
+        _take(ex, g, None, f, ftype, c, 0, pno, label, src, spans, rank + 0.5, order, row)
 
 
 def _take(ex, g, plan, f, ftype, cell, idx, pno, label, src, spans, rank, order, row=None):
