@@ -45,7 +45,7 @@ def test_many_hits_on_one_page_are_fast():
 def test_email_scan_matches_the_regex():
     texts = ["someone@example.com", "Mail someone@example.com, other.one+tag@mail.example.org.",
              "a.b@c.de.fg", "..x@y.co", "-@a.bc", "_x@y.zz", "é1@x.co", "x@y", "x@@y.co", "x@y.co@z.org",
-             "Total $1,234.56 on 2030-01-05", "a@b.com.x@y.org", "1234-5678@example.com", ""]
+             "Total $1,234.56 on 2030-01-05", "a@b.com.x@y.org", "a@b.co-c@d.org", "1234-5678@example.com", ""]
     rng = random.Random(20301121)
     alpha = "ab1Z9._%+-@ é\n:x"
     texts += ["".join(rng.choice(alpha) for _ in range(rng.randint(1, 40))) for _ in range(5000)]
