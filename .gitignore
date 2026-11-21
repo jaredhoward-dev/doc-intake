@@ -89,6 +89,8 @@ backend.config
 
 # Python misc
 .python-version
+# doc-intake has no dependencies to lock; `uv run` without --no-project writes one
+uv.lock
 
 # Sanity
 .sanity/

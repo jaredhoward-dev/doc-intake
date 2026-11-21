@@ -14,7 +14,9 @@
 - Done: a minimal CLI (`python3 -m doc_intake scan | fields | preview | approve | status | read`, plus
   `keep`, `extract`, `cleanup` and `pairs`) over a TOML config file, so it runs without writing a host.
   See [docs/cli.md](docs/cli.md).
-- `pyproject.toml` and a tagged release (`v0.1.0`) that hosts pin.
+- Done: `pyproject.toml` (stdlib only, a `doc-intake` console script, a `barcodes` extra for zxing-cpp
+  and Pillow). Hosts install from a checkout or a git tag.
+- A tagged release (`v0.1.0`) that hosts pin.
 
 ## Stage 3: better extraction
 

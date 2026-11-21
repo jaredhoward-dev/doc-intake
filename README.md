@@ -19,19 +19,30 @@ on your own desktop; only then can the assistant read them, and every read is lo
 ## Status
 
 Stage 2: the engine has moved here from its first host, a private records tool, and now runs on
-its own through a minimal CLI over a config file. There is no packaged release yet; see
+its own through a minimal CLI over a config file. It installs with pip (`pyproject.toml`); the
+first tagged release, `v0.1.0`, is still to come. See
 [ROADMAP.md](ROADMAP.md) and [docs/HANDOFF.md](docs/HANDOFF.md). The module guide is
 [docs/engine.md](docs/engine.md).
 
 ## Running it
 
-Python 3.11 or newer. Copy [examples/doc-intake.toml](examples/doc-intake.toml), set `root` to your
-records folder (and `profiles_dir` / `senders_file`, which are relative to the config file), then from
-a checkout:
+Python 3.11 or newer, no dependencies. Run it from a checkout as `python3 -m doc_intake`, or install
+it, which adds a `doc-intake` command:
+
+    pip install .                      # from a checkout
+    pip install '.[barcodes]'          # plus zxing-cpp and Pillow, for QR and barcode checks
+    pip install git+https://github.com/jaredhoward-dev/doc-intake@v0.1.0   # a pinned tag, once tagged
+
+The example config and profiles are not part of the installed package: copy
+[examples/doc-intake.toml](examples/doc-intake.toml) and [profiles/](profiles/) from the repo. Set
+`root` to your records folder (and `profiles_dir` / `senders_file`, which are relative to the config
+file), then:
 
     python3 -m doc_intake --config path/to/doc-intake.toml scan
     python3 -m doc_intake fields --task receipt inbox/some-receipt.pdf
     python3 -m doc_intake status
+
+`doc-intake scan` and so on are the same commands once installed.
 
 The `receipt` task is one of the example profiles in [profiles/](profiles/); [docs/profiles.md](docs/profiles.md)
 shows how to write your own.

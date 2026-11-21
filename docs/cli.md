@@ -8,6 +8,20 @@ arguments, with the records root, profiles and routing read from a TOML file ins
 
 Python 3.11 or newer (for `tomllib`); standard library only.
 
+## Installing
+
+From a checkout, `python3 -m doc_intake` works with nothing installed. Installing adds a `doc-intake` command
+that runs the same CLI and exits with the same status:
+
+    pip install .                                                         # from a checkout
+    pip install '.[barcodes]'                                             # plus zxing-cpp and Pillow
+    pip install git+https://github.com/jaredhoward-dev/doc-intake@v0.1.0  # a pinned tag, once tagged
+
+Only the `doc_intake` package is installed. The example config (`examples/doc-intake.toml`) and the example
+profiles (`profiles/`) stay in the repo: copy them next to each other (the example config points at
+`../profiles`) or change `profiles_dir` and `senders_file` to where you put them. Help and messages still
+spell the command `python3 -m doc_intake`; both forms work.
+
 ## The config file
 
 Found in this order:

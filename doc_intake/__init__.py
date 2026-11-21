@@ -6,3 +6,5 @@ own CLI. See docs/engine.md. Stdlib only, plus optional system tools (pdftotext,
 ImageMagick 7, zxing-cpp); it imports nothing outside this package.
 """
 from .config import CFG, configure  # noqa: F401
+
+__version__ = "0.1.0"  # mirrors pyproject.toml's version; tests/test_packaging.py checks they match

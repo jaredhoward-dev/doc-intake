@@ -20,7 +20,7 @@ Where things stand and how to pick the work up on another machine.
     cd ../doc-intake-<slug>
     python3 -I -m pytest -q tests
 
-Next: packaging (`pyproject.toml` and a `v0.1.0` tag hosts pin), then the follow-ups in
+Next: the `v0.1.0` tag hosts pin (`pyproject.toml` is in place), then the follow-ups in
 [followups.md](followups.md). Each is its own pull request against `main`.
 
 ## Rules that travel with the code
