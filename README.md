@@ -26,7 +26,8 @@ its own through a minimal CLI over a config file. There is no packaged release y
 ## Running it
 
 Python 3.11 or newer. Copy [examples/doc-intake.toml](examples/doc-intake.toml), set `root` to your
-records folder, then from a checkout:
+records folder (and `profiles_dir` / `senders_file`, which are relative to the config file), then from
+a checkout:
 
     python3 -m doc_intake --config path/to/doc-intake.toml scan
     python3 -m doc_intake fields --task receipt inbox/some-receipt.pdf

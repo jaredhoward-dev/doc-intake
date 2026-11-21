@@ -118,5 +118,5 @@ approved: <task>.json (1 documents, N fields)
 and only then does `read` return the approved fields as JSON, logging the read and its reason in
 `<state>/access.log`.
 
-On macOS, bounded reads currently fail (every file is reported as too large and unscreened); see
-[followups.md](followups.md).
+On macOS a bounded read runs without the memory cap (macOS refuses it); the timeout, the OCR pixel cap
+and ImageMagick's own limits still apply. See [engine.md](engine.md).
