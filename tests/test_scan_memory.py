@@ -155,7 +155,17 @@ def slow_exit(monkeypatch, seconds):
     monkeypatch.setattr(os, "_exit", lambda code: (time.sleep(seconds), real(code)))
 
 
-def test_run_bounded_finished_read_is_not_killed_on_the_way_out(monkeypatch):
+@pytest.fixture(params=["unreaped", "reaped"])
+def wait_path(request, monkeypatch):
+    """Run a cleanup test both ways run_bounded waits for its child: waitid WNOWAIT (kill, then reap) and wait4
+    (reap, then kill), whichever this platform would pick."""
+    if request.param == "unreaped" and not reader.can_wait_unreaped():
+        pytest.skip("this Python's os has no waitid/WNOWAIT (macOS before newer Pythons); runs on Linux CI")
+    monkeypatch.setattr(reader, "can_wait_unreaped", lambda: request.param == "unreaped")
+    return request.param
+
+
+def test_run_bounded_finished_read_is_not_killed_on_the_way_out(monkeypatch, wait_path):
     # The parent used to kill the child's group as soon as the pipe closed: a child caught before exit was
     # reported "too large", which failed small reads about 1 in 1000 under load.
     slow_exit(monkeypatch, 0.3)
@@ -163,7 +173,7 @@ def test_run_bounded_finished_read_is_not_killed_on_the_way_out(monkeypatch):
     assert value == "small" and info["ok"] and info["reason"] is None
 
 
-def test_run_bounded_child_that_never_exits_after_its_answer_times_out(monkeypatch):
+def test_run_bounded_child_that_never_exits_after_its_answer_times_out(monkeypatch, wait_path):
     slow_exit(monkeypatch, 30)
     t0 = time.monotonic()
     value, info = reader.run_bounded(lambda: "small", mem_mb=512, timeout=1)
@@ -179,7 +189,7 @@ def gone(pid):
 
 @pytest.mark.skipif(not (shutil.which("ps") and shutil.which("sleep")),
                     reason="needs ps and sleep on PATH to start a leftover tool and check it was killed")
-def test_run_bounded_still_kills_tools_the_child_left_behind():
+def test_run_bounded_still_kills_tools_the_child_left_behind(wait_path):
     import subprocess
 
     def leave_a_tool():
@@ -190,6 +200,23 @@ def test_run_bounded_still_kills_tools_the_child_left_behind():
     while not gone(pid) and time.monotonic() - t0 < 5:
         time.sleep(0.05)
     assert gone(pid)
+
+
+def test_run_bounded_kills_the_group_before_reaping_where_it_can(monkeypatch, wait_path):
+    calls = []
+    real_killpg, real_wait4 = os.killpg, os.wait4
+    monkeypatch.setattr(os, "killpg", lambda *a: (calls.append("killpg"), real_killpg(*a))[1])
+
+    def wait4(pid, options):
+        r = real_wait4(pid, options)
+        if r[0]:
+            calls.append("reap")
+        return r
+    monkeypatch.setattr(os, "wait4", wait4)
+    value, info = reader.run_bounded(lambda: "small", mem_mb=512, timeout=30)
+    assert value == "small" and info["ok"]
+    # Unreaped, the zombie child holds its pid and group id through the kill; reaped first, there is a window.
+    assert calls == (["killpg", "reap"] if wait_path == "unreaped" else ["reap", "killpg"])
 
 
 def test_run_bounded_reports_only_the_exception_type():
