@@ -8,7 +8,7 @@ import json
 import pytest
 
 import host
-from doc_intake import places, preview
+from doc_intake import places, preview, tasks
 from helpers import ACCOUNT, FAKES, drop, rec, run  # noqa: F401  (rec is a fixture)
 
 TASKS = (host.STATE, "tasks")
@@ -40,14 +40,16 @@ Total      $7.00
 """
 
 
-def _wrong(argv, tty=True):
-    """wrong, run as if at the user's own terminal (it refuses anywhere else) unless tty is False."""
-    orig = places.is_tty
+def _wrong(argv, tty=True, stdin=None):
+    """wrong, run as if at the user's own terminal (stdout and stdin; it refuses anywhere else) unless tty is False;
+    stdin, when given, sets stdin's answer on its own."""
+    orig, orig_in = places.is_tty, tasks.stdin_is_tty
     places.is_tty = lambda: tty
+    tasks.stdin_is_tty = lambda: tty if stdin is None else stdin
     try:
         return host.main(["wrong", *argv])
     finally:
-        places.is_tty = orig
+        places.is_tty, tasks.stdin_is_tty = orig, orig_in
 
 
 def _tasks(rec):
@@ -195,3 +197,193 @@ def test_no_sensitive_value_in_output_or_task(rec, capsys):
     text = out.out + out.err + t.read_text() + rec.joinpath(host.STATE, "access.log").read_text()
     for f in FAKES:
         assert f not in text
+
+
+# ---------------------------------------------------------------- round 4 gate: the terminal, refusals, edge cases
+def test_stdout_a_terminal_with_stdin_a_pipe_is_refused(rec, capsys):
+    """'wrong ... > /dev/tty' from a tool runner: stdout is a terminal, stdin its pipe. Refused, task unchanged."""
+    t = _fields(rec, "two")
+    body = t.read_text()
+    capsys.readouterr()
+    assert _wrong([t.name, "--doc", "1", "--field", "total"], tty=True, stdin=False) == 2
+    assert "own terminal" in capsys.readouterr().err
+    assert t.read_text() == body and _tasks(rec) == [t]
+
+
+BENEFITS = """2030 Open Enrollment Benefits Guide
+Medical Plans            Example PPO Plan      Example HDHP Plan
+Deductible (individual / family)   $500 / $1,000    $1,700 / $3,400
+Employee only    $45.00    $20.00
+"""
+
+
+def test_a_field_per_plan_needs_plan_and_plan_narrows_it(rec, capsys):
+    drop(rec, "b.txt", BENEFITS)
+    assert run(["fields", "--task", "benefits", "inbox/b.txt"]) == 0
+    (t,) = _tasks(rec)
+    body = t.read_text()
+    capsys.readouterr()
+    assert _wrong([t.name, "--doc", "1", "--field", "medical.deductible-individual"]) == 2
+    err = capsys.readouterr().err
+    assert "2 values" in err and "add --plan or --row" in err and "$" not in err and "Example" not in err
+    assert t.read_text() == body
+    assert _wrong([t.name, "--doc", "1", "--field", "medical.deductible-individual",
+                   "--plan", "Example PPO Plan"]) == 0
+    after = _load(t)
+    (rej,) = after["rejected"]
+    assert rej["plan"] == "Example PPO Plan" and rej["field"] == "deductible_individual"
+    got = {(v["plan"], v["field"]): v["value"] for v in after["values"]}
+    assert got.get(("Example PPO Plan", "deductible_individual")) != "$500"
+    assert got[("Example HDHP Plan", "deductible_individual")] == "$1,700"  # the other plan's value is untouched
+
+
+TREATMENT = """Treatment Plan Estimate
+Code     Tooth   Description              Fee        Ins Est    Pt Est
+D2740    8       Crown porcelain          $1,200.00  $600.00    $600.00
+D0120            Periodic exam            $60.00     $60.00     $0.00
+"""
+
+
+def test_a_field_per_row_needs_row_and_row_narrows_it(rec, capsys):
+    drop(rec, "e.txt", TREATMENT)
+    assert run(["fields", "--task", "treatment_estimate", "inbox/e.txt"]) == 0
+    (t,) = _tasks(rec)
+    group = next(v["group"] for v in _load(t)["values"] if v["field"] == "fee")
+    capsys.readouterr()
+    assert _wrong([t.name, "--doc", "1", "--field", "fee"]) == 2
+    assert "add --plan or --row" in capsys.readouterr().err
+    assert _wrong([t.name, "--doc", "1", "--field", f"{group}.fee", "--row", "2"]) == 0
+    after = _load(t)
+    assert after["rejected"][0]["row"] == 2
+    fees = {v["row"]: v["value"] for v in after["values"] if v["field"] == "fee"}
+    assert fees.get(1) == "$1,200.00" and fees.get(2) != "$60.00"
+
+
+def test_profile_changed_since_is_refused(rec, capsys):
+    t = _fields(rec, "two")
+    body = _load(t)
+    body["profile_sha256"] = "0" * 64  # as if receipt.json had been edited since fields ran
+    t.write_text(json.dumps(body, indent=1))
+    before = t.read_text()
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 2
+    assert "profile receipt changed since" in capsys.readouterr().err
+    assert t.read_text() == before and _tasks(rec) == [t]
+
+
+def test_source_gone_from_the_records_is_refused(rec, capsys):
+    t = _fields(rec, "two")
+    body = t.read_text()
+    (rec / "inbox" / "two.txt").unlink()
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 2
+    assert "no longer under the records folder" in capsys.readouterr().err
+    assert t.read_text() == body and _tasks(rec) == [t]
+
+
+def test_a_source_that_gained_a_secret_is_refused(rec, capsys, monkeypatch):
+    """A file that gains an SSN has a new sha256, so the hash check refuses it before it is even read; the secret
+    check after the read (_refuse_secret) still guards a document whose detectors say otherwise."""
+    from helpers import SSN
+    from doc_intake import reader
+    t = _fields(rec, "two")
+    body = t.read_text()
+    src = rec / "inbox" / "two.txt"
+    original = src.read_text()
+    src.write_text(original + f"SSN {SSN}\n")
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 2
+    err = capsys.readouterr().err
+    assert "changed since" in err and SSN not in err
+    src.write_text(original)  # same bytes, same sha256: now the read happens, and the secret check runs on it
+    monkeypatch.setattr(reader, "sensitive_counts", lambda doc: {"password": 1})
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 2
+    assert "holds secret material" in capsys.readouterr().err
+    assert t.read_text() == body
+
+
+def test_a_next_candidate_on_a_detector_region_is_dropped(rec, capsys, monkeypatch):
+    """Blanking a value could in principle let the extractor reach a number the detectors flag in the original
+    text: such a record is never kept, and is counted as dropped. The extractor is made to return one here."""
+    from doc_intake import fields as fx
+    real = fx.extract
+
+    def fake(prof, pages, src, keep_span=False):
+        recs, dropped, plans = real(prof, pages, src, keep_span)
+        text = pages[0][1]
+        if "$12.00" not in text:  # the blanked re-read: hand back the account number's spot as the total
+            s = TWO_TOTALS.index(ACCOUNT)
+            for r in recs:
+                if r["field"] == "total":
+                    r.update(value=ACCOUNT, span=[s, s + len(ACCOUNT)], label="total")
+        return recs, dropped, plans
+
+    t = _fields(rec, "two")
+    before = _load(t)["dropped"]
+    monkeypatch.setattr(fx, "extract", fake)
+    capsys.readouterr()
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 0
+    out = capsys.readouterr()
+    after = _load(t)
+    assert "total" not in _vals(after) and "receipt.total" in after["missing"]
+    assert sum(after["dropped"].values()) == sum(before.values()) + 1
+    assert ACCOUNT not in t.read_text() and ACCOUNT not in out.out + out.err
+    assert ACCOUNT[-4:] not in json.dumps(after["values"])
+
+
+def test_the_other_documents_dropped_counts_are_unchanged(rec):
+    t = _fields(rec, "two", "one")
+    body = _load(t)
+    body["dropped"] = {"account": 2}  # what the other document gave, as fields counted it
+    t.write_text(json.dumps(body, indent=1))
+    assert _wrong([t.name, "--doc", "2", "--field", "total"]) == 0
+    assert _load(t)["dropped"] == {"account": 2}
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 0
+    assert _load(t)["dropped"] == {"account": 2}
+
+
+def _with_model_tax(t):
+    """The KNOWN document's task as if the local model had filled its tax (wrong runs no model)."""
+    body = _load(t)
+    src = body["sources"][0]["file"]
+    body["values"].append({"group": "receipt", "plan": None, "row": None, "field": "tax", "value": "$0.50",
+                           "file": src, "page": 1, "label": "local model"})
+    body["missing"] = [m for m in body["missing"] if m != "receipt.tax"]
+    t.write_text(json.dumps(body, indent=1))
+
+
+def test_a_local_model_value_survives_unless_it_is_the_one_marked(rec):
+    t = _fields(rec, "known")
+    _with_model_tax(t)
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 0
+    after = _load(t)
+    assert _vals(after)["tax"]["value"] == "$0.50" and "receipt.tax" not in after["missing"]
+    assert _wrong([t.name, "--doc", "1", "--field", "tax"]) == 0
+    after = _load(t)
+    assert "tax" not in _vals(after) and "receipt.tax" in after["missing"]
+    assert after["rejected"][-1]["label"] == "local model"
+
+
+def test_task_files_stay_private_and_wrong_is_deterministic(rec):
+    from helpers import mode
+    t = _fields(rec, "two")
+    start = t.read_text()
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 0
+    assert mode(t) == 0o600
+    first = _load(t)
+    t.write_text(start)  # the same wrong on the same task again
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 0
+    again = _load(t)
+    for k in ("values", "missing", "dropped", "rejected", "sources"):
+        assert again[k] == first[k]
+    assert run(["approve", t.name]) == 0
+    assert _wrong([t.name, "--doc", "1", "--field", "total"]) == 0
+    v2 = t.with_name(t.name[:-5] + "-v2.json")
+    assert mode(v2) == 0o600 and mode(t) == 0o600
+
+
+def test_a_missing_field_cannot_be_marked_wrong(rec, capsys):
+    t = _fields(rec, "known")
+    assert "receipt.tax" in _load(t)["missing"]
+    body = t.read_text()
+    capsys.readouterr()
+    assert _wrong([t.name, "--doc", "1", "--field", "tax"]) == 2
+    assert "a missing field can't be marked wrong" in capsys.readouterr().err
+    assert t.read_text() == body

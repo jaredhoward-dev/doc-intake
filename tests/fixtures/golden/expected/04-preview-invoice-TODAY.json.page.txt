@@ -7,5 +7,6 @@
  "cards": 2,
  "check_warn": 0,
  "open": 2,
- "pair_alert": true
+ "pair_alert": true,
+ "wrong_hints": 11
 }
