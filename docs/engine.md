@@ -66,11 +66,14 @@ wrong steers what `fields` takes, so the assistant never runs it; it can point a
 command. `wrong` adds a rejection to the task file's `rejected` list: the source's sha256, the field (group,
 plan, row, name), its page, its matched label and its character span on the page. It never stores the value or
 any text (the task file already holds the value; the span is the one `where` holds). Then it re-reads that one
-document only and extracts again with each rejected spot blanked to spaces, so the extractor takes the next
-candidate for that field by its usual rules (which can be another wrong value: the user previews it like any
-other) or leaves it missing; a record that still lands on a rejected spot (a known sender has
-no span to blank: it matches on page and label) is dropped, and one that lands on a detector's region of the
-unblanked text is dropped and counted as fields does. The other documents' values are carried over unchanged, and
+document only and extracts again with the rejections handed to the extractor, which turns a rejected candidate away
+before ranking it, so the field takes its next-best candidate by its usual rules (which can be another wrong value:
+the user previews it like any other) and is missing only when no other candidate exists. A candidate is rejected
+when it is the same field (group, plan, row, name) and either the same candidate (the same page and label at an
+overlapping spot; a known sender whose name is not printed has no spot, so it matches on page and label) or the
+same value, read back from the page at the rejected spot, whatever label or spot reached it. The text is never
+changed, so a rejection never moves another field's value, and a record on a detector's region is still dropped and
+counted as fields does. The other documents' values are carried over unchanged, and
 values the local model filled for that document are kept unless marked (`wrong` runs no model). The result is a
 new, unapproved task: it overwrites an unapproved task in place, and an approved one is kept, marked superseded
 and replaced by a `-vN` file, exactly as `fields --replaces` does. Approval never carries over: the user previews
@@ -129,7 +132,9 @@ on the real clock. Like the other hooks it is not type-checked: a non-callable f
 
 `route(path, ftype, redacted_text, title_fn=None, **opts)` returns a dict with `category`, `profile`, `dest`,
 `name`, `note`, `date_from_file` and `name_from_model`. It sees only redacted text. Hosts register their own value
-types for their own profiles with `fields.register_type()`.
+types for their own profiles with `fields.register_type()`. A registered type gets the same whole-line check as the
+built-in ones (a figure cut out of a longer number is no value; [profiles.md](profiles.md)), unless it is one of
+the free-text types.
 
 The review page takes hooks for receipts and invoices: `summary_extras(values)` adds keys to a document's summary,
 `money_card(summary)` says where the document goes and what approving does, `money_sections(plan)` adds sections,
@@ -147,7 +152,17 @@ Read these before trusting it:
   that fail Luhn are hidden as a number, so a dotted 4-4-4-4 order or build number is redacted too; beside other
   4-digit groups they are hidden when they start with a card issuer prefix (an expiry-shaped neighbour goes with
   them), so IDs like `5100 0042 0017 0003 0001` or `4111-1111-1111-1112-0001` lose their first sixteen digits,
-  while `2030-0042-0017-0003-0001` stays clean. Not found:
+  while `2030-0042-0017-0003-0001` stays clean. An SSN-shaped `ddd-dd-dddd` group glued by a dash to a run that
+  holds a card, such a number or a plain number of 10+ digits is hidden as an SSN. These additions sit on top of
+  the round-5 detector, kept whole: every span it made, and every re-scan of redact, stays, so the detector hides
+  at least what it hid (`tests/test_detect_differential.py` checks this against a frozen copy). In other
+  dash-joined IDs, after an expiry (`12/29-`) or a date, after a double dash, a number under 10 digits or bare
+  4-digit groups, an SSN-shaped group is left alone, and digits joined to an SSN by a dash stay unless another span
+  takes them. An account or card tag whose value holds or runs into a valid `ddd-dd-dddd` shape shows no digits.
+  A card tag shows the last four digits only
+  when they are unambiguous: when overlapping Luhn-valid stretches in one run end at different groups, or a
+  19-digit card's first sixteen are a card too, the tag is a plain `[CARD]`, since the last four could belong to a
+  neighbouring group. Not found:
   double-space gaps, groups wrapped across lines, `/` `,` `_` separators, spaced separators (`4111 - 1111`), and
   dotted Luhn-failing runs under 15 digits. Names
   are not detected at all. Other layouts, other countries' formats and numbers broken up by OCR errors slip

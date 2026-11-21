@@ -694,3 +694,258 @@ def test_configure_profiles_dir_reaches_fields(tmp_path):
                                                                    "labels": ["total"]}]}))
     configure(profiles_dir=str(tmp_path))  # fresh_config (conftest) puts the host's back afterwards
     assert fx.profile_names() == ["only_one"]
+
+
+# ---------------------------------------------------------------- usage: a meter reading with its unit
+@pytest.mark.parametrize("text, want", [
+    ("1,234 kWh", "1,234 kWh"),
+    ("56.7 therms", "56.7 therms"),
+    ("1 therm", "1 therm"),
+    ("12 CCF", "12 CCF"),
+    ("3 hcf", "3 HCF"),
+    ("1.5 Mcf", "1.5 MCF"),
+    ("4,500 gallons", "4,500 gallons"),
+    ("45 gal.", "45 gal"),
+    ("12 kgal", "12 kgal"),
+    ("300 cubic feet", "300 cubic feet"),
+    ("7 cu ft", "7 cu ft"),
+    ("18 m3", "18 m3"),
+    ("2.25 Dth", "2.25 Dth"),
+    ("1234kwh", "1234 kWh"),            # the figure as printed, one space, the unit's usual spelling
+    ("0.5 KWH", "0.5 kWh"),
+])
+def test_usage_keeps_the_figure_with_its_unit(text, want):
+    assert _run(_one("usage", ["usage"]), f"Usage:   {text}\n") == ({"v": want}, {})
+
+
+@pytest.mark.parametrize("text", [
+    "742",                       # a bare figure: a reading needs its unit
+    "$742 kWh",                  # an amount, not a reading
+    "12345678901 kWh",           # an account number beside a unit word
+    "1234-5678 kWh",             # the tail of a dashed number
+    "1234 5678 kWh",             # or of a spaced one
+    "1234567 kWh",               # more than six digits without thousands commas
+    "0045123 gallons",           # a leading zero: a meter or account number
+    "1,234,567,890 kWh",         # more than nine digits with them
+    "7 kWhs",                    # a unit inside a longer word
+    "12.5% kWh",
+])
+def test_usage_never_takes_a_number_beside_a_unit(text):
+    got, _ = _run(_one("usage", ["usage"]), f"Usage:   {text}\n")
+    assert got == {}
+
+
+def test_usage_cut_from_a_longer_number_by_a_column_is_never_taken():
+    # The value-below rule reads only the label's column, a slice of the line that starts inside the meter number
+    # ("...5123 kWh"); the reading is checked again on the page, where the digits before it show it is no reading.
+    head = "Service         Usage\n"
+    text = head + "Meter No 0045123 kWh\n"
+    assert text[len(head) + head.index("Usage") - 4:].startswith("5123 kWh")  # where the column's slice starts
+    assert _run(_one("usage", ["usage"]), text) == ({}, {})
+    # the same layout with a real reading below the label is read in full, not as the slice's part of it
+    assert _run(_one("usage", ["usage"]), head + "Electric     1,234 kWh\n") == ({"v": "1,234 kWh"}, {})
+
+
+def test_usage_values_go_through_the_detectors(monkeypatch):
+    """Like every type: a reading that overlaps a detector's region is dropped and counted, never kept."""
+    text = "Usage:   1,234 kWh\n"
+    s = text.index("1,234")
+    monkeypatch.setattr(detect, "find_spans", lambda t: [(s, s + 9, "account", "")] if t == text else [])
+    assert _run(_one("usage", ["usage"]), text) == ({}, {"account": 1})
+
+
+def test_usage_offered_without_page_text_keeps_the_type_check():
+    """An Extraction made without its pages (a host calling offer itself) can't re-check a reading's edge on the
+    page: it keeps the value, as every type does once it matched where it was found, and the detectors still run."""
+    prof = _one("usage", ["usage"])
+    ex = fx.Extraction(prof)
+    ex.offer("g", None, None, "v", "usage", "742 kwh", 1, "usage", "x", (8, 15))
+    assert [r["value"] for r in ex.records()] == ["742 kWh"]
+    ex = fx.Extraction(prof)
+    ex.offer("g", None, None, "v", "usage", "742 kWh", 1, "usage", "x", (8, 15), [(8, 15, "account", "")])
+    assert ex.records() == [] and ex.dropped == {"account": 1}
+    # with its pages, the page decides: here the reading is the tail of a longer number, so it is never kept
+    ex = fx.Extraction(prof, pages=[(1, "Usage:  9742 kWh")])
+    ex.offer("g", None, None, "v", "usage", "742 kWh", 1, "usage", "x", (9, 16))
+    assert ex.records() == []
+
+
+def test_usage_normalize_leaves_an_unmatched_value_alone():
+    assert fx.normalize("usage", "  lots   of kWh ") == "lots of kWh"  # no figure: only the whitespace is tidied
+    assert fx.normalize("usage", "") == ""
+
+
+# ---------------------------------------------------------------- figures cut out of a longer number by a column slice
+def test_a_money_figure_cut_from_a_longer_number_by_a_column_is_refused():
+    # The value-below rule reads only the label's column: here that slice starts inside a meter number, at
+    # "5123.50". Read on the page, digits run on before it, so it is no amount; with nothing else, the field is missing.
+    head = "Service         Amount\n"
+    text = head + "Meter No 0045123.50\n"
+    assert text[len(head) + head.index("Amount") - 4:].startswith("5123.50")  # where the slice starts
+    assert _run(_one("money", ["amount"]), text) == ({}, {})
+    # the next candidate wins instead: another "Amount" further down with a whole figure below it
+    text2 = text + "\nService         Amount\nElectric        $84.20\n"
+    assert _run(_one("money", ["amount"]), text2) == ({"v": "$84.20"}, {})
+
+
+@pytest.mark.parametrize("text, want", [
+    ("Amount\n$1,234.56\n", "$1,234.56"),              # an ordinary figure below its label
+    ("Amount\n1,234.56\n", "1,234.56"),
+    ("Item      Qty    Amount\nWidget    2      12.00\n", "12.00"),   # a column of amounts
+    ("Credit:   -5.00\n", "5.00"),                     # a lone minus is no digit run
+    ("Total:   $5.00-$6.00\n", "$5.00"),                # a range of amounts, each whole
+])
+def test_ordinary_amounts_still_extract(text, want):
+    label = "credit" if text.startswith("Credit") else ("total" if text.startswith("Total") else "amount")
+    got, dropped = _run(_one("money", [label]), text)
+    assert got["v"].lstrip("-") == want and dropped == {}
+
+
+@pytest.mark.parametrize("text, s, e, ftype, cut", [
+    ("12345678.00", 3, 11, "money", True),       # head: digits run on before
+    ("1,234,567.89", 6, 12, "money", True),      # head: a digit group then a comma
+    ("1234-5678.00", 5, 12, "money", True),      # head: a dashed number
+    ("4,500.00", 0, 4, "money", True),           # tail: a slice ending inside "4,500.00"
+    ("12.00/3456", 0, 5, "money", True),         # tail: a slash then a long digit run
+    ("12.00/34", 0, 5, "money", False),          # a slash then a short run: another figure
+    ("Items 12.50,13.00", 6, 11, "money", False),     # a comma between two figures, not a thousands group
+    ("Items 12.50,13.00", 12, 17, "money", False),
+    ("Total: 12.50/3.00", 7, 12, "money", False),     # a slash between two figures
+    ("Total: 12.50/3.00", 13, 17, "money", False),
+    ("1,234", 0, 1, "money", True),              # tail: a comma and a thousands group
+    ("12,34", 0, 2, "count", False),             # a comma and two digits is no thousands group
+    ("Invoice 12345-1", 8, 13, "ref", False),    # a dash and a short suffix: the reference is whole
+    ("Invoice 12345-1", 14, 15, "count", True),  # but its "1" alone is the tail of the longer number
+    ("Ref 2030-0001", 9, 13, "ref", True),       # "0001" out of "2030-0001"
+    ("Ref 2030-0001", 4, 13, "ref", False),      # the whole reference
+    ("INV-2030-0042", 0, 13, "ref", False),
+    ("Call 555-0100", 5, 13, "ref", False),      # a phone-shaped reference, whole
+    ("Rate 3.875 % 12%", 5, 12, "percent", False),
+    ("Rate 3.875 % 12%", 13, 16, "percent", False),
+    ("2030-01-14", 0, 10, "date", False),        # an ISO date, whole
+    ("2030-01-14", 0, 9, "date", True),          # its day cut short
+    ("12/31/2030", 1, 10, "date", True),         # a US date missing its first digit
+    ("2030-01-14", 5, 10, "ref", True),          # "01-14" out of an ISO date
+    ("Due 2030-01-14", 4, 8, "year", True),      # its year
+    # a bare digit run glued by a dash or slash to more digits is a piece of one number
+    ("Statement 12/2030", 13, 17, "year", False),  # a month and year
+    ("Statement 12/2030", 10, 12, "count", True),  # its month, beside a four-digit piece
+    ("Page 3/10", 7, 9, "count", False),  # page x of y
+    ("Page 3/10", 5, 6, "count", False),
+    ("Net 15/30", 7, 9, "count", False),  # payment terms
+    ("Rate 8/10", 7, 9, "count", False),  # a ratio
+    ("Term 12-24 months", 8, 10, "count", False),  # a range
+    ("Reading 100-200 kWh", 12, 15, "count", False),
+    ("Exp 12/30", 7, 9, "count", False),  # a card's month and year, as printed
+    ("Acct 123-456-2030", 13, 17, "year", True),  # a year-shaped end of a three-piece number
+    ("Acct 1-12/2030", 10, 14, "year", True),  # a month and year joined on again
+    ("Acct 12-345678", 8, 14, "count", True),
+    ("Acct 123-456-7890", 13, 17, "count", True),
+    ("Acct 123-456-7890", 5, 8, "count", True),
+    ("Acct 12/3456", 8, 12, "count", True),
+    ("Acct 2030-01-1234567", 13, 20, "count", True),
+    ("Acct 12-34-56", 11, 13, "count", True),
+    ("Acct 123-45-67", 12, 14, "count", True),
+    ("Acct 123-45-67", 9, 11, "count", True),
+    ("Total: 12.50/3.00", 13, 17, "money", False),
+    ("Invoice 12345-1", 8, 13, "count", False),
+    ("Invoice 12345-1", 8, 15, "ref", False),
+    ("Acct 12-345678.00", 8, 17, "money", False),  # an amount after a short piece keeps the money rule
+    ("$1,234.56", 0, 9, "money", False),         # the whole figure
+    ("-5.00", 1, 5, "money", False),             # a lone minus
+    ("$5.00-$6.00", 0, 5, "money", False),       # a dash then "$": another figure, not more digits
+    ("01/01/2030-01/14/2030", 0, 10, "date", False),   # a dash between dates is a range
+    ("01/01/2030-01/14/2030", 11, 21, "date", False),
+    ("12/31/2030", 6, 10, "year", True),         # a year taken out of a date
+    ("Tax year 2030", 9, 13, "year", False),
+    ("3.875 %", 0, 7, "percent", False),
+])
+def test_cut_from_longer(text, s, e, ftype, cut):
+    assert fx.cut_from_longer(text, s, e, ftype) is cut
+
+
+def test_box_row_and_table_amounts_still_extract():
+    """Figures in a row of boxes and in a line-item table are whole on the page, so the guard leaves them alone."""
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True, "box_row": True}},
+            "fields": [{"group": "g", "name": "first", "type": "money", "labels": ["first box"]},
+                       {"group": "g", "name": "second", "type": "money", "labels": ["second box"]}]}
+    fx.check_profile(prof)
+    got, dropped = _run(prof, "First Box            Second Box\n" + "$1,234.56".ljust(21) + "$30,100.00\n")
+    assert got == {"first": "$1,234.56", "second": "$30,100.00"} and dropped == {}
+    table = {"name": "t", "default_group": "g", "groups": {"g": {"global": True}, "items": {}},
+             "fields": [{"group": "g", "name": "total", "type": "money", "labels": ["total"]}],
+             "tables": [{"group": "items", "header_min": 2, "row_requires": ["code"],
+                         "columns": [{"name": "code", "type": "ref", "labels": ["code"]},
+                                     {"name": "fee", "type": "money", "labels": ["fee"]}]}]}
+    fx.check_profile(table)
+    recs, dropped, _ = fx.extract(table, [(1, "Code      Fee\nD2740     $1,200.00\nD0120     60.00\n")], "x")
+    assert sorted(r["value"] for r in recs if r["field"] == "fee") == ["$1,200.00", "60.00"] and dropped == {}
+
+
+def test_a_year_offered_a_slice_of_a_date_is_missing():
+    year = _one("year", ["year"])
+    assert _run(year, "Year\n12/31/2030\n") == ({}, {})   # the value-below column holds a date, not a year
+    assert _run(year, "Tax year:   2030\n") == ({"v": "2030"}, {})
+    assert _run(year, "Year\n2030\n") == ({"v": "2030"}, {})
+
+
+def test_a_column_before_cut_inside_a_number_takes_nothing():
+    # "column_before" stops the borrower's column at the "Seller" header; here that edge falls inside one number, so
+    # the slice's "4512.00" is no amount. A figure that ends before the edge is taken as usual.
+    head = "Description       Borrower   Seller\n"
+    cut = head.index("Seller")
+    prof = _one("money", ["recording fee"], column_before="seller")
+    line = "Recording fee".ljust(cut - len("4512.00")) + "4512.0078"
+    assert line[:cut].endswith("4512.00") and line[cut:cut + 2] == "78"
+    assert _run(prof, head + line + "\n") == ({}, {})
+    assert _run(prof, head + "Recording fee     $45.00     $10.00\n") == ({"v": "$45.00"}, {})
+
+
+def test_a_host_type_slice_of_a_longer_number_is_refused(vehicle_types):
+    """A host's registered type gets the same check through offer: a value whose last digit runs on into more digits
+    on the page is a piece of something else; the same value standing whole is kept."""
+    prof = _one("vehicle", ["vehicle"])
+    page = "Vehicle:  Ford F-15012\n"
+    ex = fx.Extraction(prof, pages=[(1, page)])
+    s = page.index("Ford")
+    ex.offer("g", None, None, "v", "vehicle", "Ford F-150", 1, "vehicle", "x", (s, s + 10))
+    assert ex.records() == []
+    assert _run(prof, "Vehicle:  Ford F-150\n") == ({"v": "Ford F-150"}, {})
+
+
+@pytest.mark.parametrize("ftype, page, value", [
+    ("short_text", "Note:  Example note7\n", "Example note"),
+    ("org_name", "From:  Example Co2\n", "Example Co"),
+    ("plan_name", "Plan:  Gold 12/31/2030\n", "Gold 12"),
+])
+def test_free_text_types_skip_the_check(ftype, page, value):
+    """Free-text types are whole cells: a digit or a date beside the value never turns it away."""
+    ex = fx.Extraction(_one(ftype, ["x"]), pages=[(1, page)])
+    s = page.index(value)
+    ex.offer("g", None, None, "v", ftype, value, 1, "x", "x", (s, s + len(value)))
+    assert [r["value"] for r in ex.records()] == [value]
+
+
+@pytest.mark.parametrize("ftype, page, value", [
+    ("ref", "Invoice #:  INV-2030-0042\n", "INV-2030-0042"),
+    ("ref", "Reference:  2030-0001\n", "2030-0001"),
+    ("ref", "Order:  12345-1\n", "12345-1"),
+    ("ref", "Phone ref:  555-0100\n", "555-0100"),
+    ("percent", "Rate:  3.875 %\n", "3.875 %"),
+    ("money", "Items:  12.50,13.00\n", "12.50"),
+    ("money", "Total:  12.50/3.00\n", "12.50"),
+    ("date", "Date:  2030-01-14\n", "2030-01-14"),
+])
+def test_dash_comma_and_slash_neighbours_still_extract(ftype, page, value):
+    got, dropped = _run(_one(ftype, [page.split(":")[0].lower()]), page)
+    assert got == {"v": fx.normalize(ftype, value)} and dropped == {}
+
+
+def test_a_year_after_a_month_and_a_usage_range():
+    # "Statement 12/2030": a month and year, so a year field takes the year
+    assert _run(_one("year", ["statement"]), "Statement 12/2030\n") == ({"v": "2030"}, {})
+    # "100-200 kWh" is a range, not one reading: the usage type never starts after a dash, so the field is missing
+    # rather than taking 200 kWh; a single reading beside it is taken
+    usage = _one("usage", ["reading"])
+    assert _run(usage, "Reading 100-200 kWh\n") == ({}, {})
+    assert _run(usage, "Reading 200 kWh\n") == ({"v": "200 kWh"}, {})

@@ -81,6 +81,27 @@ all matches a document, the engine takes nothing from it: the document doesn't f
 Every value is then checked against the sensitive-value detectors. A value that overlaps a detected card,
 account or ID number, or that looks like one when read with its label, is dropped and counted, never kept.
 
+Every value with a spot on the page is also checked against its whole line, which matters where a rule reads only a
+slice of one (the column below a label, or left of a `column_before` header). When the slice's edge fell inside a
+longer number, the figure is no value and the field takes its next candidate or is missing. A figure is a piece of a
+longer number when, at its first or last digit, it is glued to:
+
+- a digit, or a dot and a digit (`...5678.00` out of `12345678.00`);
+- a comma and a thousands group, three digits and no fourth, beside a run of one to three digits that follows no dot
+  (`...,567.89` out of `1,234,567.89`; `12.50,13.00` is two figures);
+- a dash or slash and a run of four or more digits that is not a whole date (`5678.00` out of `1234-5678.00`;
+  `12.50/3.00`, `Invoice 12345-1` and the range `01/01/2030-01/14/2030` keep their figures);
+- for a bare digit run (no decimals, no `$`), a dash or slash and any digits before it (`345678` out of
+  `12-345678`, `56` out of `12-34-56`), or after it a short piece that is joined on again (`123` out of
+  `123-456-7890`). `12345` in `Invoice 12345-1` keeps its short suffix apart, and two figures stay separate when
+  they are a month and year (one or two digits, then a 19xx or 20xx year: `Statement 12/2030`) or a short pair of
+  one to three digits each that isn't joined on again (`Page 3/10`, `Net 15/30`, `12-24 months`, `100-200`).
+
+A figure of any type but `date` that takes part of a date on its line is a piece too, so a `year` field never takes
+`2030` out of `12/31/2030`, and nothing takes `01-14` out of `2030-01-14`. A minus before an amount (`-5.00`) and a
+`$` start are a figure's own. Free-text types (`org_name`, `short_text`, `plan_name`) are taken as whole cells and
+skip this check.
+
 ### Labels with an index
 
 A label can be a pair `[text, index]` instead of a plain string:
@@ -126,6 +147,7 @@ at the top of `fields.py`.
 | Type | Matches |
 | --- | --- |
 | `money` | `$1,234.56`, `12.00`, up to four decimals |
+| `usage` | a meter reading with its unit: `1,234 kWh`, `56.7 therms`, `12 CCF`, `4,500 gallons`, `300 cubic feet` (also MWh, HCF, MCF, Dth, kgal, gal, cu ft, m3); stored as the figure, one space and the unit (`1234kwh` gives `1234 kWh`) |
 | `percent` | `3.875 %` |
 | `date` | `03/14/2030`, `2030-03-14`, `Mar 14, 2030`; stored as `YYYY-MM-DD` |
 | `currency` | `USD`, `EUR`, `GBP`, ...; an `anywhere` currency field with no other value falls back to USD when the text has a `$` |
@@ -136,8 +158,12 @@ at the top of `fields.py`.
 | `short_text`, `plan_name` | short free text, taken only as a whole cell |
 
 Free-text types (`org_name`, `short_text`, `plan_name`) never hold three or more digits in a row, so street
-numbers, ZIP codes and IDs stay out. `fields.py` lists the rest (`cost`, `limit`, `duration`, `policy_type`, ...).
-A host adds its own types with `fields.register_type(name, pattern)` before loading a profile that uses them.
+numbers, ZIP codes and IDs stay out. A `usage` figure has at most six digits (nine with thousands commas) and no
+leading zero, and is never the tail of a longer number (a digit, comma, dot, dash, slash or `#` just before it, or a
+group of digits a space before it), checked against the page itself, so an account or meter number printed beside a
+unit word is never a reading. Like every type's, a `usage` value is still checked against the detectors. `fields.py` lists the rest (`cost`, `limit`, `duration`, `policy_type`, ...).
+A host adds its own types with `fields.register_type(name, pattern)` before loading a profile that uses them. They get
+the same whole-line check as the built-in types (see "How a value is found").
 
 ## Groups
 
@@ -205,9 +231,9 @@ A host may keep its own keys in a vendor entry (a filing suggestion, say) and re
 ## The utility bill example
 
 `utility_bill.json` takes the provider, the statement date, the service period, the due date, the amount due, the
-previous balance and the payments received. Its `never` list (account numbers, service addresses, customer names,
-meter numbers) has no field that could hold any of them, and the detectors drop an account number that lands where
-a field's value goes. It shows three things the first two examples don't:
+previous balance, the payments received and the usage with its unit. Its `never` list (account numbers, service
+addresses, customer names, meter numbers) has no field that could hold any of them, and the detectors drop an account
+number that lands where a field's value goes. It shows four things the first two examples don't:
 
 - **Values below labels.** Many bills print a row of labels with the values on the line below
   (`Bill Date   Due Date`, then the dates). The same profile reads that layout and the labels-and-values-on-one-line
@@ -219,9 +245,10 @@ a field's value goes. It shows three things the first two examples don't:
   (`"due date"` on the statement date) then throws out the whole header row. The utility bill relies on longer
   labels winning instead: "Due Date" belongs to `due_date`, so the statement date's `"date"` label never matches
   inside it.
-
-Usage (kWh, gallons, therms) is left out: no built-in type holds a reading with its unit. A host that wants it
-registers a type with `fields.register_type` and adds the field in its own copy.
+- **Usage with its unit.** The `usage` field (type `usage`) takes `742 kWh` or `4,500 gallons`, never a bare figure.
+  It sets `label_at_cell_start`, so "usage" counts only at the start of a cell: "Average Daily Usage" and "Previous
+  Usage" never give the bill's usage. It has no `not` list, since a `not` word anywhere in a row of labels would
+  throw out the whole row.
 
 ## Checking a profile
 

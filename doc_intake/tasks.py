@@ -273,7 +273,7 @@ def cmd_fields(args, out=print):
             red_pages = [(n, detect.redact(t)[0]) for n, t in doc["pages"]]
             cands, status = llm.fill_fields(red_pages, wanted, model)
             _apply_model(prof, wanted, cands, records, plans, dropped, src)
-            records[:] = [r for r in records if not any(_is_rejected(r, x, doc["pages"]) for x in rejs)]
+            records[:] = [r for r in records if not any(_is_rejected(r, x, doc["pages"], prof) for x in rejs)]
             task["model"] = status
             wanted = missing_fields(prof, records, plans)
         for r in records:
@@ -332,40 +332,38 @@ def _write_task(task, prof, target, old, out):
 _REJECT_KEYS = ("group", "plan", "row", "field", "page", "label")
 
 
-def _is_rejected(rec, rej, pages):
-    """True when rec is the candidate the user marked wrong: the same field, page and matched label, at the same
-    spot (its span, or for a value with none, such as a known sender, where its value first appears on the page:
-    the place locate gave it). A rejection with no spot (the value was never located) matches on the rest."""
-    if any(rec.get(k) != rej.get(k) for k in _REJECT_KEYS):
-        return False
-    a, b = locate._value_span(rec, pages), rej.get("span")
-    return not a or not b or (a[0] < b[1] and b[0] < a[1])
+def _ftype(prof, rec):
+    """The value type of rec's field in prof (a field or a table column), or None."""
+    for f in prof.get("fields", []):
+        if f["group"] == rec.get("group") and f["name"] == rec.get("field"):
+            return f["type"]
+    for t in prof.get("tables", []):
+        if t["group"] == rec.get("group"):
+            for c in t["columns"]:
+                if c["name"] == rec.get("field"):
+                    return c["type"]
+    return None
 
 
-def _mask(pages, rejs):
-    """pages with each rejected value's characters blanked to spaces (same length, so every other offset holds)."""
-    out = []
-    for n, text in pages:
-        for r in rejs:
-            if r.get("page") == n and r.get("span"):
-                s, e = r["span"]
-                text = text[:s] + re.sub(r"\S", " ", text[s:e]) + text[e:]
-        out.append((n, text))
-    return out
+def _is_rejected(rec, rej, pages, prof=None):
+    """True when rec is a value the user marked wrong (fields.is_rejected: the same candidate at the same spot, or the
+    same value read back from the rejected spot, for the same field)."""
+    return fx.is_rejected(rec, rej, pages, _ftype(prof, rec) if prof else None)
 
 
 def _extract_doc(prof, pages, src, rejs):
-    """fx.extract over one document's pages, with the values the user marked wrong kept out: each one's spot is
-    blanked first, so the extractor takes the next candidate for that field or leaves it missing, and a record that
-    still lands on one (a known sender has no spot to blank) is dropped. A record on a detector's region of the
-    unblanked text is dropped and counted, as fields does, so blanking can never let a sensitive value through."""
+    """fx.extract over one document's pages, with the values the user marked wrong kept out: each rejection goes to
+    the extractor, which turns the rejected candidate away before ranking, so the field takes its next-best
+    candidate or, when there is none, is missing. A record that still matches a rejection, or that lands on a
+    detector's region of the text, is dropped (and the second counted, as fields does): defence in depth, so a
+    rejection can never let a marked or sensitive value through."""
     if not rejs:
         return fx.extract(prof, pages, src, keep_span=True)
-    records, dropped, plans = fx.extract(prof, _mask(pages, rejs), src, keep_span=True)
+    records, dropped, plans = fx.extract(prof, pages, src, keep_span=True, rejected=rejs)
     spans = {n: detect.find_spans(t) for n, t in pages}
     keep = []
     for r in records:
-        if any(_is_rejected(r, x, pages) for x in rejs):
+        if any(_is_rejected(r, x, pages, prof) for x in rejs):
             continue
         sp = r.get("span")
         kind = next((k for s, e, k, _ in spans.get(r["page"], []) if sp and sp[0] < e and s < sp[1]), None)

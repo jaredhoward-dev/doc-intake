@@ -416,6 +416,43 @@ def test_llm_fill_is_validated(rec, ollama):
     assert SSN not in t.read_text() and "XYZ123456789" not in t.read_text()
 
 
+
+ONE_TOTAL = """Example Book Shop
+Receipt
+Date: 02/03/2030
+Tax        $0.30
+Payment    Visa
+Total      $5.30
+"""
+
+
+@pytest.mark.parametrize("model_value, kept", [("$5.30", False), ("$6.00", True)])
+def test_a_model_value_equal_to_a_rejected_one_is_removed(rec, monkeypatch, model_value, kept):
+    """fields --replaces --llm on a document with a value marked wrong: the local model (faked here) fills the
+    now-missing field. Its value has no spot of its own, so only the value rule can catch it: the rejected value read
+    back from the page, normalized as the field's type. A different value from the model is kept."""
+    drop(rec, "one.txt", ONE_TOTAL)
+    assert run(["fields", "--task", "receipt", f"{INBOX}/one.txt"]) == 0
+    (t,) = (rec / STATE / "tasks").iterdir()
+    monkeypatch.setattr(places, "is_tty", lambda: True)  # wrong runs only at the user's terminal: this is a fixture
+    monkeypatch.setattr(tasks, "stdin_is_tty", lambda: True)
+    assert host.main(["wrong", t.name, "--doc", "1", "--field", "total"]) == 0
+    monkeypatch.setattr(places, "is_tty", lambda: False)
+    assert "receipt.total" in json.loads(t.read_text())["missing"]
+    asked = []
+
+    def fake_fill(pages, wanted, model, call=None):
+        asked.append(sorted(w["field"] for w in wanted))
+        return [(1, "receipt", None, "total", model_value)], "ok"
+
+    monkeypatch.setattr(llm, "fill_fields", fake_fill)
+    assert run(["fields", "--task", "receipt", "--replaces", t.name, f"{INBOX}/one.txt", "--llm", "--model", "m"]) == 0
+    task = json.loads(t.read_text())
+    assert asked == [["total"]]
+    got = [r["value"] for r in task["values"] if r["field"] == "total"]
+    assert got == ([model_value] if kept else [])
+    assert ("receipt.total" in task["missing"]) is not kept
+
 # ---------------------------------------------------------------- near-duplicates, model titles, guessed dates
 _WORDS = ("garden shed plan notes about the north fence the gate hinge oil the paint colors the compost bin "
           "and the hose reel with spring tasks summer tasks and autumn tasks for the yard and the porch steps "

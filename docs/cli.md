@@ -98,7 +98,7 @@ dest = "Receipts/{year}"
 | `status [--detail]` | Task files with approval state and counts; field names, never values. |
 | `read TASK_JSON\|EXTRACT --reason WHY [--fields a,b]` | Read an approved task file or extract. Refused before approval, after any change, or without a reason. Every read is logged. |
 | `keep TASK_JSON\|EXTRACT` | Keep a task file or extract past `cleanup`. |
-| `wrong TASK_JSON --doc N --field [GROUP.]FIELD [--plan P] [--row N] [--reason WHY]` | The user, from their own terminal, marks one value wrong (the review page shows the command beside each value). That document is read again with the value's spot left out; the result is a new unapproved task to preview and approve again. |
+| `wrong TASK_JSON --doc N --field [GROUP.]FIELD [--plan P] [--row N] [--reason WHY]` | The user, from their own terminal, marks one value wrong (the review page shows the command beside each value). That document is read again with the value turned away, so the field takes its next-best candidate or is missing; the result is a new unapproved task to preview and approve again. |
 | `extract FILE... --pages SPEC [--llm-check] [--model M]` | A redacted extract of named pages, approved and read like a task file. |
 | `cleanup [--task PROFILE] [--older-than DAYS] [--dry-run]` | Delete old task files and extracts (30 days by default). |
 | `pairs [TASK_JSON...]` | Invoice and receipt pairs among approved task files, and whether their totals agree. Exit 1 on a mismatch. |

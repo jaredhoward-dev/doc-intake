@@ -24,7 +24,9 @@
   their headers) with the opt-in `box_row` key ([docs/profiles.md](docs/profiles.md)); still to be
   confirmed on real scans.
 - More detectors and profiles, each with fake fixtures. Done so far: card numbers in dotted groups;
-  a `utility_bill` example profile and route.
+  an SSN-shaped group glued to a card run or a plain 10+ digit number; extraction refuses a figure cut out of a
+  longer number; a `utility_bill` example profile and route, with a `usage` type for
+  its meter reading.
 - Done: a `doctor` command that checks the config, tools, memory cap and model without reading a
   document ([docs/cli.md](docs/cli.md)).
 - Done: a review-page option to mark a value wrong, which re-runs fields for that document: the page shows a
