@@ -178,6 +178,36 @@ def test_image_crop_blacks_out_and_highlights(tmp_path):
     assert r > 200 and b < 200
 
 
+def test_no_imagemagick_means_no_image_snapshot(tmp_path, monkeypatch):
+    src = tmp_path / "card.png"
+    src.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+    monkeypatch.setattr(reader, "have", lambda name: name not in ("magick", "convert", "identify")
+                        and _real_have(name))
+    monkeypatch.setattr(snap, "_run", lambda cmd, **kw: pytest.fail(f"ran {cmd[0]} without ImageMagick"))
+    assert reader.magick_cmd() is None and reader.magick_cmd("identify") is None
+    assert snap.snapshot_image(str(src), (420, 180, 520, 210), (800, 400), [(100, 180, 300, 210)]) is None
+    assert snap.image_size(str(src)) is None
+
+
+@pytest.mark.skipif(not (shutil.which("pdftotext") and shutil.which("pdftoppm")), reason="poppler-utils needed")
+def test_no_imagemagick_means_no_pdf_snapshot_never_an_unredacted_crop(tmp_path, monkeypatch):
+    """pdftoppm renders the crop, but without ImageMagick nothing can black out the account: no PNG at all."""
+    p, doc = pdf_doc(tmp_path, INVOICE)
+    text = doc["pages"][0][1]
+    words, size = snap.pdf_words(p, 1)
+    s = text.index("$20.00")
+    box = snap.locate(text, (s, s + 6), words)
+    reds = snap.redaction_boxes(text, words)
+    assert reds
+    monkeypatch.setattr(reader, "have", lambda name: name not in ("magick", "convert", "identify")
+                        and _real_have(name))
+    ran = []
+    real_run = snap._run
+    monkeypatch.setattr(snap, "_run", lambda cmd, **kw: ran.append(cmd[0]) or real_run(cmd, **kw))
+    assert snap.snapshot_pdf(p, 1, box, size, reds) is None
+    assert ran == ["pdftoppm"]  # the crop was rendered, then dropped unredacted
+
+
 def test_redaction_list_covers_detector_spans():
     text = f"Account {ACCOUNT}  Phone: 804-555-0123\nTotal $5.00\n"
     words, x = [], 0
