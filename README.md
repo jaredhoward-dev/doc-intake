@@ -18,10 +18,23 @@ on your own desktop; only then can the assistant read them, and every read is lo
 
 ## Status
 
-Stage 1: the engine has moved here from its first host, a private records tool, and is not yet
-usable on its own. There is no CLI, no example host and no packaged release yet; see
+Stage 2: the engine has moved here from its first host, a private records tool, and now runs on
+its own through a minimal CLI over a config file. There is no packaged release yet; see
 [ROADMAP.md](ROADMAP.md) and [docs/HANDOFF.md](docs/HANDOFF.md). The module guide is
 [docs/engine.md](docs/engine.md).
+
+## Running it
+
+Python 3.11 or newer. Copy [examples/doc-intake.toml](examples/doc-intake.toml), set `root` to your
+records folder, then from a checkout:
+
+    python3 -m doc_intake --config path/to/doc-intake.toml scan
+    python3 -m doc_intake fields --task receipt inbox/some-receipt.pdf
+    python3 -m doc_intake status
+
+The config is found by `--config`, else `$DOC_INTAKE_CONFIG`, else `./doc-intake.toml`. You preview
+and approve in your own terminal (`preview`, then `approve`); the assistant only ever runs `read`
+with a reason. Commands, config keys and routing rules: [docs/cli.md](docs/cli.md).
 
 ## Tests
 
