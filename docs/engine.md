@@ -34,7 +34,7 @@ The interfaces below may still change before the tagged `v0.1.0` release.
 | `llm.py` | An optional pass through a local model (Ollama on `127.0.0.1` only): titles, flags, missing fields; best-effort |
 | `dates.py` | The date a document is about (payment, statement or issue date before any other), for its file name |
 | `locate.py`, `snapshots.py` | Where each value sits on its page (text-layer or OCR word boxes) and a crop of that spot with every detector region blacked out |
-| `tasks.py` | Task files: `fields`, `approve`, `status`, `read`, `keep`, `cleanup` and redacted `extract`s of named pages |
+| `tasks.py` | Task files: `fields`, `approve`, `wrong`, `status`, `read`, `keep`, `cleanup` and redacted `extract`s of named pages |
 | `approval.py` | The approval: a sha256 seal over the approved content, and the user's confirmation in a desktop dialog (or a typed-back phrase on `/dev/tty`) |
 | `preview.py` | The user's preview of a task file: in a terminal, or a self-contained review page (inline CSS and images, no scripts, nothing fetched) with a redacted crop of each value's spot on its page |
 | `pairs.py` | Invoice and receipt pairs for one charge, matched by a shared number or the same vendor within 3 days, and whether their totals agree |
@@ -54,6 +54,26 @@ The interfaces below may still change before the tagged `v0.1.0` release.
 
 `status` lists task files with counts and no values. `extract --pages` writes a redacted extract of named pages,
 only when the user asks for one; it is approved and read the same way.
+
+**wrong TASK_JSON --doc N --field GROUP.FIELD** (instead of approving, when a value is wrong): the user marks one
+value wrong. The review page prints this command beside every value (`--plan` and `--row` added where a field repeats;
+field names may be written with dashes). Like `approve` it runs only in the user's own terminal: marking values
+wrong steers what `fields` takes, so the assistant never runs it; it can point at a value and hand the user the
+command. `wrong` adds a rejection to the task file's `rejected` list: the source's sha256, the field (group,
+plan, row, name), its page, its matched label and its character span on the page. It never stores the value or
+any text (the task file already holds the value; the span is the one `where` holds). Then it re-reads that one
+document only and extracts again with each rejected spot blanked to spaces, so the extractor takes the next
+candidate for that field by its usual rules (which can be another wrong value: the user previews it like any
+other) or leaves it missing; a record that still lands on a rejected spot (a known sender has
+no span to blank: it matches on page and label) is dropped, and one that lands on a detector's region of the
+unblanked text is dropped and counted as fields does. The other documents' values are carried over unchanged, and
+values the local model filled for that document are kept unless marked (`wrong` runs no model). The result is a
+new, unapproved task: it overwrites an unapproved task in place, and an approved one is kept, marked superseded
+and replaced by a `-vN` file, exactly as `fields --replaces` does. Approval never carries over: the user previews
+and approves again. Rejections accumulate across `wrong` runs, and `fields --replaces` keeps applying them to a
+document of the same sha256. `wrong` refuses a superseded task, a document that changed or left the records
+folder since, and a task whose profile changed since (run `fields --replaces` on the whole task instead); the
+access log gets a `wrong` line with the document number, field, page and label, and `--reason` when given.
 
 ## The inbox contract
 
