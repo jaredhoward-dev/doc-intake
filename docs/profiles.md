@@ -82,12 +82,20 @@ Every value is then checked against the sensitive-value detectors. A value that 
 account or ID number, or that looks like one when read with its label, is dropped and counted, never kept.
 
 Every value with a spot on the page is also checked against its whole line, which matters where a rule reads only a
-slice of one (the column below a label, or left of a `column_before` header): when the slice's edge fell inside a
-longer number, so that a digit, or a comma, dot, dash or slash
-and a digit, is glued to the figure's first or last digit (`...5678.00` out of `12345678.00`), it is no value and the
-field takes its next candidate or is missing. A minus before an amount (`-5.00`), a `$` start and a dash between two
-dates are not cuts, but a slash or dot still is, so a `year` field never takes `2030` out of `12/31/2030`. Free-text
-types (`org_name`, `short_text`, `plan_name`) are taken as whole cells and skip this check.
+slice of one (the column below a label, or left of a `column_before` header). When the slice's edge fell inside a
+longer number, the figure is no value and the field takes its next candidate or is missing. A figure is a piece of a
+longer number when, at its first or last digit, it is glued to:
+
+- a digit, or a dot and a digit (`...5678.00` out of `12345678.00`);
+- a comma and a thousands group, three digits and no fourth, beside a run of one to three digits that follows no dot
+  (`...,567.89` out of `1,234,567.89`; `12.50,13.00` is two figures);
+- a dash or slash and a run of four or more digits that is not a whole date (`5678.00` out of `1234-5678.00`; `12.50/3.00`,
+  `Invoice 12345-1` and the range `01/01/2030-01/14/2030` keep their figures).
+
+A figure of any type but `date` that takes part of a date on its line is a piece too, so a `year` field never takes
+`2030` out of `12/31/2030`, and nothing takes `01-14` out of `2030-01-14`. A minus before an amount (`-5.00`) and a
+`$` start are a figure's own. Free-text types (`org_name`, `short_text`, `plan_name`) are taken as whole cells and
+skip this check.
 
 ### Labels with an index
 

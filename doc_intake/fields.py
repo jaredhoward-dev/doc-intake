@@ -554,22 +554,61 @@ def _cells(text, base=0):
 
 
 # ---------------------------------------------------------------- the engine
+_RUN_BEFORE = re.compile(r"(\d+)$")
+_RUN_AFTER = re.compile(r"\d+")
+_THOUSANDS_AFTER = re.compile(r"\d{3}(?!\d)")
+# A dash or slash joins two pieces of one number ("1234-5678.00") only when the piece across it is this long; a
+# shorter one is a separate figure ("12.50/3.00", "Invoice 12345-1").
+LONG_PIECE = 4
+
+
 def cut_from_longer(text, s, e, ftype=None):
-    """True when text[s:e], read on its whole page, is the head or tail of a longer number: the value-below rule and
+    """True when text[s:e], read on its whole line, is a piece of a longer number: the value-below rule and
     "column_before" read a slice of a line, and a slice's edge can fall inside an account or meter number
-    ("...5678.00" out of "12345678.00"). Head: a digit just before a figure that starts with a digit, or a digit
-    then a comma, dot, dash or slash. Tail: a digit just after a figure that ends with a digit, or a comma, dot, dash
-    or slash then a digit. A dash between dates is a range ("01/01/2030-01/14/2030"), never a cut, so dates skip
-    it; a lone minus before an amount ("-5.00") has no digit before it, so it is no cut either. A "$" start is a
-    figure's own start."""
-    glue = ",./" if ftype == "date" else ",.-/"
-    if s < e and text[s].isdigit() and s > 0:
-        a = text[s - 1]
-        if a.isdigit() or (a in glue and s > 1 and text[s - 2].isdigit()):
+    ("...5678.00" out of "12345678.00"). At either edge of a figure that starts (or ends) with a digit, the figure is
+    a piece when what is glued to that digit is:
+    - a digit;
+    - a dot and a digit (the figure starts inside another number's decimals, or stops before its own);
+    - a comma and a thousands group: three digits and no fourth after the comma, with a run of one to three digits
+      that follows no dot before it ("...,567.89" out of "1,234,567.89"; "12.50,13.00" is two figures);
+    - a dash or slash and a run of LONG_PIECE or more digits that is not a whole date of its own ("5678.00" out of
+      "1234-5678.00"; "01/01/2030-01/14/2030" is a range of two dates).
+    A figure of any type but date that takes part of a date on its line is a piece too ("2030" out of "12/31/2030",
+    "01-14" out of "2030-01-14"); a date's own value is never part of one. A lone minus ("-5.00") and a "$" start
+    are a figure's own."""
+    if not 0 <= s < e <= len(text):
+        return False
+    ls = text.rfind("\n", 0, s) + 1
+    le = text.find("\n", e)
+    line = text[ls:le if le >= 0 else len(text)]
+    a, b = s - ls, e - ls
+    dates = [m.span() for m in _RX["date"].finditer(line)]
+    if ftype != "date" and any(ds < b and a < de and not (a <= ds and de <= b) for ds, de in dates):
+        return True
+
+    def whole_date(i, j):
+        return any(ds <= i and j <= de and not (ds < b and a < de) for ds, de in dates)
+
+    if line[a].isdigit() and a > 0:
+        c, left = line[a - 1], line[:a - 1]
+        run = _RUN_BEFORE.search(left)
+        if c.isdigit() or (c == "." and run):
             return True
-    if s < e and text[e - 1].isdigit() and e < len(text):
-        b = text[e]
-        if b.isdigit() or (b in glue and e + 1 < len(text) and text[e + 1].isdigit()):
+        if c == "," and run and len(run.group(1)) <= 3 and not left[:run.start()].endswith(".") \
+                and _THOUSANDS_AFTER.match(line, a):
+            return True
+        if c in "-/" and run and len(run.group(1)) >= LONG_PIECE and not whole_date(run.start(), run.end()):
+            return True
+    if line[b - 1].isdigit() and b < len(line):
+        c = line[b]
+        run = _RUN_AFTER.match(line, b + 1)
+        mine = _RUN_BEFORE.search(line[:b])
+        if c.isdigit() or (c == "." and run):
+            return True
+        if c == "," and run and len(mine.group(1)) <= 3 and not line[:mine.start()].endswith(".") \
+                and _THOUSANDS_AFTER.match(line, b + 1):
+            return True
+        if c in "-/" and run and len(run.group(0)) >= LONG_PIECE and not whole_date(run.start(), run.end()):
             return True
     return False
 
