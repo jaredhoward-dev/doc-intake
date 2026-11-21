@@ -150,7 +150,10 @@ Read these before trusting it:
   that fail Luhn are hidden as a number, so a dotted 4-4-4-4 order or build number is redacted too; beside other
   4-digit groups they are hidden when they start with a card issuer prefix (an expiry-shaped neighbour goes with
   them), so IDs like `5100 0042 0017 0003 0001` or `4111-1111-1111-1112-0001` lose their first sixteen digits,
-  while `2030-0042-0017-0003-0001` stays clean. Not found:
+  while `2030-0042-0017-0003-0001` stays clean. An SSN-shaped `ddd-dd-dddd` group glued by a dash to a run that
+  holds a card or such a number is hidden as an SSN (in other dash-joined IDs it is left alone). A card tag shows
+  the last four digits only when they are unambiguous: when overlapping Luhn-valid stretches in one run end at
+  different groups, the tag is a plain `[CARD]`, since the last four could belong to a neighbouring group. Not found:
   double-space gaps, groups wrapped across lines, `/` `,` `_` separators, spaced separators (`4111 - 1111`), and
   dotted Luhn-failing runs under 15 digits. Names
   are not detected at all. Other layouts, other countries' formats and numbers broken up by OCR errors slip

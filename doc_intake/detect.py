@@ -12,6 +12,7 @@ label); street addresses are the line after an "Address:" or "Street:" label, or
 by a town and state. Redaction is pattern-based and can miss things: names are not detected, other address and
 phone layouts slip through, and OCR errors can break a number so no pattern matches it.
 """
+import bisect
 import re
 from collections import Counter
 
@@ -68,19 +69,23 @@ def _longest_stretch(raw, groups, starts, hi, ok):
     return best
 
 
-def _card_spans(text):
+def _card_spans(text, quiet=None):
     """[(start, end, kind)] for card candidates. A run of digit groups (a CSV row with an expiry, a list number
     before the card, two cards in a row) yields every card in it: the longest stretch of whole groups from each start
-    that passes length, prefix and Luhn, overlapping stretches merged into one span (its tag shows the last four
-    digits of the stretch that ends last). Between and beside the cards, a card-grouped stretch that fails Luhn
-    is hidden as long-number: when it fills its gap, or when every other group there is shorter than four digits."""
+    that passes length, prefix and Luhn, overlapping stretches merged into one span. When the merged stretches end at
+    different groups, which one is the card is unknown and the last four could be a neighbour's, so (start, end) goes
+    into quiet and the tag shows no digits. Between and beside the cards, a card-grouped stretch that fails Luhn
+    is hidden as long-number: when it fills its gap, or when every other group there is shorter than four digits.
+    A run that yields any span also yields the SSN-shaped dash groups glued into it (_glued_ssns)."""
     out = []
     for m in _CARD.finditer(text):
         raw, base = m.group(0), m.start()
+        groups = [(g.start(), g.end()) for g in _CARD_PIECE.finditer(raw)]
         if "." not in raw and is_card(re.sub(r"\D", "", raw)):
             out.append((m.start(), m.end(), "card"))
+            out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups))
             continue
-        groups = [(g.start(), g.end()) for g in _CARD_PIECE.finditer(raw)]
+        found = len(out)
 
         def card_ok(piece, i, j):
             return bool(_CARD_GROUPS.match(piece)) and is_card(re.sub(r"\D", "", piece))
@@ -96,9 +101,10 @@ def _card_spans(text):
             if not b:
                 continue
             if cards and b[0] <= cards[-1][1]:
-                cards[-1] = (cards[-1][0], max(cards[-1][1], b[1]), 0)
+                cards[-1] = (cards[-1][0], max(cards[-1][1], b[1]), cards[-1][2] or b[1] != cards[-1][1])
             else:
-                cards.append(b)
+                cards.append((b[0], b[1], False))
+
         def misread_piece(a, z):  # a Luhn-failing card-grouped stretch with an issuer prefix
             piece = raw[groups[a][0]:groups[z][1]]
             n = len(re.sub(r"\D", "", piece))
@@ -106,8 +112,10 @@ def _card_spans(text):
                     and card_prefix_ok(re.sub(r"\D", "", piece)))
 
         gaps, prev = [], 0
-        for ci, cj, _ in cards:
+        for ci, cj, ambiguous in cards:
             out.append((base + groups[ci][0], base + groups[cj][1], "card"))
+            if ambiguous and quiet is not None:
+                quiet.add(out[-1][:2])
             # A misread stretch overlapping the card's start or end: hide the part outside the card as well.
             head = min((a for a in range(max(prev, ci - 6), ci) for z in range(ci, min(cj, a + 6))
                         if misread_piece(a, z)), default=ci)
@@ -133,6 +141,26 @@ def _card_spans(text):
             else:
                 out.extend((base + groups[a][0], base + groups[z][1], "long-number")
                            for a, z in _misread_tiling(raw, groups, lo, hi))
+        if len(out) > found:
+            out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups))
+    return out
+
+
+def _glued_ssns(raw, groups):
+    """[(start, end, kind)] of 3-2-4 dash groups in a run that pass ssn_kind but sit glued to the run by a dash
+    (a card, a dash, then ddd-dd-dddd), where _SSN_DASHED's edges don't let it match. Only asked for a run that holds
+    a card or a hidden number: the SSN outranks the card, so find_spans clips the card around it, and without this
+    the SSN's digits stayed in the text beside the card (or under its tag)."""
+    out = []
+    for i in range(len(groups) - 2):
+        (a0, a1), (b0, b1), (c0, c1) = groups[i:i + 3]
+        if (a1 - a0, b1 - b0, c1 - c0) != (3, 2, 4) or raw[a1] != "-" or raw[b1] != "-":
+            continue
+        if raw[a0 - 1:a0] != "-" and raw[c1:c1 + 1] != "-":
+            continue  # not glued: _SSN_DASHED finds it on its own
+        k = ssn_kind(raw[a0:a1], raw[b0:b1], raw[c0:c1])
+        if k:
+            out.append((a0, c1, k))
     return out
 
 
@@ -212,6 +240,33 @@ _VIN = re.compile(r"(?<![A-Za-z0-9])(?=[A-HJ-NPR-Z0-9]*\d)(?=[A-HJ-NPR-Z0-9]*[A-
 _VIN_LABELED = re.compile(r"(?i:\b(?:vin|vehicle\s+identification\s+(?:number|no\.?|#))(?![A-Za-z]))\W{0,40}?"
                           r"(?<![A-Za-z0-9])((?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-HJ-NPR-Z0-9]{17})(?![A-Za-z0-9])")
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_EMAIL_LOCAL = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._%+-")
+_EMAIL_DOMAIN = re.compile(r"@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+
+
+def _is_word(ch):
+    return ch.isalnum() or ch == "_"  # what \b treats as a word character in a str pattern
+
+
+def _email_spans(text):
+    """[(start, end)] of what _EMAIL.finditer matches, in linear time. The regex retries its local part from every
+    start in a long run with no @ (quadratic: about a minute on 100k dash-joined digit groups); here each @ is found
+    once, its local part is the run of local characters before it (back to the previous match), and the match starts
+    at the leftmost word boundary in that run, as the regex's leftmost match would."""
+    out, pos = [], 0
+    at = text.find("@")
+    while at != -1:
+        m = _EMAIL_DOMAIN.match(text, at)
+        if m:
+            s = at
+            while s > pos and text[s - 1] in _EMAIL_LOCAL:
+                s -= 1
+            k = next((k for k in range(s, at) if (k > 0 and _is_word(text[k - 1])) != _is_word(text[k])), None)
+            if k is not None:
+                out.append((k, m.end()))
+                pos = m.end()
+        at = text.find("@", max(at + 1, pos))
+    return out
 _LONG = re.compile(r"(?<!\d)\d{10,}(?!\d)")
 # US phone numbers: separators or parentheses required, NANP area code and exchange start 2-9
 _PHONE = re.compile(r"(?<![\w+-])(?:\+?1[\s.-]?)?(?:\([2-9]\d{2}\)\s?|[2-9]\d{2}[\s.-])[2-9]\d{2}[\s.-]\d{4}(?![\d-])")
@@ -339,8 +394,9 @@ def _tag(kind, value=""):
     return TAGS[kind]
 
 
-def raw_spans(text):
-    """Every candidate (start, end, kind) before overlap resolution."""
+def raw_spans(text, quiet=None):
+    """Every candidate (start, end, kind) before overlap resolution. A set passed as quiet collects the card
+    spans whose tag must show no digits (see _card_spans)."""
     out = []
 
     def add(m, kind, group=0):
@@ -348,9 +404,10 @@ def raw_spans(text):
 
     for rx, kind in ((_PRIVATE_KEY, "private-key"), (_API_KEY, "api-key"), (_OTP, "2fa"),
                      (_PASSWORD, "password"), (_PIN, "pin"), (_SECRET, "secret"), (_MBI, "medicare"),
-                     (_MRZ, "passport"), (_EIN, "ein"), (_EMAIL, "email")):
+                     (_MRZ, "passport"), (_EIN, "ein")):
         for m in rx.finditer(text):
             add(m, kind)
+    out.extend((s, e, "email") for s, e in _email_spans(text))
     for m in _SSN_DASHED.finditer(text):
         k = ssn_kind(*m.groups())
         if k:
@@ -359,7 +416,7 @@ def raw_spans(text):
         k = ssn_kind(*m.groups())
         if k:
             out.append((m.start(1), m.end(3), k))
-    out.extend(_card_spans(text))
+    out.extend(_card_spans(text, quiet))
     transport = transport_header_spans(text)
     for m in _NINE.finditer(text):
         if aba_ok(m.group(0)) and not any(s <= m.start() < e for s, e in transport):
@@ -417,23 +474,64 @@ def raw_spans(text):
     return out
 
 
+class _Disjoint:
+    """Non-overlapping (start, end) spans, with the ones overlapping a query found by bisection.
+
+    Since no two overlap, sorted by start their ends are sorted too, and the spans overlapping [s, e) are one
+    contiguous run. Spans settled earlier sit in one pair of lists; new ones go into a second pair (insort, which
+    mostly appends when they come in start order) until settle() merges the two. find_spans settles once per kind,
+    so the work stays near-linear; checking every taken span per candidate was quadratic in the number of hits."""
+
+    def __init__(self):
+        self.old_s, self.old_e, self.new_s, self.new_e = [], [], [], []
+
+    def add(self, s, e):
+        i = bisect.bisect_left(self.new_s, s)
+        while i < len(self.new_s) and self.new_s[i] == s and self.new_e[i] < e:
+            i += 1  # an empty span sorts before a span with the same start
+        self.new_s.insert(i, s)
+        self.new_e.insert(i, e)
+
+    def settle(self):
+        if self.new_s:
+            both = sorted(zip(self.old_s + self.new_s, self.old_e + self.new_e))
+            self.old_s, self.old_e = [a for a, _ in both], [b for _, b in both]
+            self.new_s, self.new_e = [], []
+
+    def overlapping(self, s, e):
+        """Sorted [(start, end)] of the spans with start < e and s < end."""
+        return sorted((starts[i], ends[i]) for starts, ends in ((self.old_s, self.old_e), (self.new_s, self.new_e))
+                      for i in range(bisect.bisect_right(ends, s), bisect.bisect_left(starts, e)))
+
+
 def find_spans(text):
     """Non-overlapping spans [(start, end, kind, tag)], sorted by start."""
     rank = {k: i for i, k in enumerate(PRIORITY)}
-    cands = sorted(raw_spans(text), key=lambda s: (rank[s[2]], s[0], -(s[1] - s[0])))
-    taken = []
+    quiet = set()
+    cands = sorted(raw_spans(text, quiet), key=lambda s: (rank[s[2]], s[0], -(s[1] - s[0])))
+    taken, spans = [], _Disjoint()
+    cur = None
+
+    def take(ts, te, tk, tag):
+        taken.append((ts, te, tk, tag))
+        spans.add(ts, te)
+
     for s, e, k in cands:
-        hits = sorted((ts, te) for ts, te, _, _ in taken if s < te and ts < e)
+        if rank[k] != cur:
+            spans.settle()  # a new rank: this rank's spans join the settled ones
+            cur = rank[k]
+        hits = spans.overlapping(s, e)
         if not hits:
-            taken.append((s, e, k, _tag(k, text[s:e])))
+            take(s, e, k, "[CARD]" if k == "card" and (s, e) in quiet else _tag(k, text[s:e]))
             continue
         if k not in ("card", "long-number"):
             continue
         # A card or number partly inside a higher-priority span (618-91-5555.5555-5555.4444 read as an SSN first):
         # hide the digits left outside it too, or the rest of the card would stay in the text. A card is counted
         # once: its last piece is the card, earlier pieces are numbers. The tag shows the card's last four only when
-        # that piece ends where the card ends and holds all four; otherwise it is [CARD], so no digit hidden under
-        # the other span leaks through the tag.
+        # that piece is a whole card itself (the card beside a glued SSN), or holds all four and ends where the card
+        # ends (and the card's tag wasn't quiet); otherwise it is [CARD], so no digit hidden under the other span leaks
+        # through the tag.
         pieces, pos = [], s
         for ts, te in hits + [(e, e)]:
             lo, hi = max(pos, s), min(ts, e)
@@ -444,10 +542,10 @@ def find_spans(text):
         for i, (ps, pe) in enumerate(pieces):
             if k == "card" and i == len(pieces) - 1:
                 digits = re.sub(r"\D", "", text[ps:pe])
-                whole_tail = not text[pe:e].strip(" .-") and len(digits) >= 4
-                taken.append((ps, pe, "card", _tag("card", text[ps:pe]) if whole_tail else "[CARD]"))
+                show = is_card(digits) or (len(digits) >= 4 and not text[pe:e].strip(" .-") and (s, e) not in quiet)
+                take(ps, pe, "card", _tag("card", text[ps:pe]) if show else "[CARD]")
             else:
-                taken.append((ps, pe, "long-number", TAGS["long-number"]))
+                take(ps, pe, "long-number", TAGS["long-number"])
     return sorted(taken)
 
 
@@ -467,8 +565,11 @@ def redact(text, max_passes=3):
         if not spans:
             break
         total.update(k for _, _, k, _ in spans)
-        for s, e, _, tag in reversed(spans):
-            text = text[:s] + tag + text[e:]
+        parts, pos = [], 0
+        for s, e, _, tag in spans:  # one join: splicing each span into the string was quadratic in span count
+            parts += [text[pos:s], tag]
+            pos = e
+        text = "".join(parts) + text[pos:]
     return text, dict(total)
 
 
