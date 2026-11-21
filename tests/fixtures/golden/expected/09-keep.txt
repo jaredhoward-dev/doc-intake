@@ -1,0 +1,5 @@
+$ host.py keep paystub-<TODAY>.json
+rc=0
+--- stdout
+kept (cleanup skips it): .doc-intake/tasks/paystub-<TODAY>.json
+--- stderr

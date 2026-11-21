@@ -1,0 +1,8 @@
+$ host.py fields --task receipt inbox/receipt-software.txt inbox/receipt-print.txt inbox/garden-order.eml
+rc=0
+--- stdout
+wrote .doc-intake/tasks/receipt-<TODAY>.json: 3 documents, 13 fields, 2 missing (0 required), 3 flagged in 3 documents, 3 complete, 0 dropped as sensitive (none); approved: no
+The user previews it in his own terminal: python3 tests/host.py preview "receipt-<TODAY>.json"
+or as a page: python3 tests/host.py preview --html "receipt-<TODAY>.json"
+then, once he has looked: python3 tests/host.py approve "receipt-<TODAY>.json"
+--- stderr

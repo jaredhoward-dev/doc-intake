@@ -1,0 +1,14 @@
+{
+ "files": {
+  "b087de7cd697683c4e9cec9080febc7ff31032d5b3202a44a081947cd65d8a50": {
+   "at": "<TODAY>",
+   "counts": {
+    "email": 1,
+    "password": 1
+   },
+   "path": "inbox/.held/logins.txt",
+   "status": "held"
+  }
+ },
+ "version": 1
+}

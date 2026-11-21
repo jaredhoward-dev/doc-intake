@@ -1,0 +1,13 @@
+$ host.py fields --task invoice --labels inbox/invoice-print.txt
+rc=0
+--- stdout
+invoice-print.txt: 1 pages, text text; known sender: no
+  dates in the redacted text, in order: far; scan's document date: far-future
+  p.1 line 2 col 1: invoice_number <- "invoice" (type ref; value on line: no; below: yes; in its column: 1 non-empty line down)
+  p.1 line 3 col 1: invoice_number <- "invoice number" (type ref; value on line: yes; below: yes)
+  p.1 line 3 col 1: invoice_number <- "invoice" (type ref; value on line: yes; below: yes)
+  p.1 line 4 col 1: invoice_date <- "invoice date" (type date; value on line: yes; below: no)
+  p.1 line 4 col 9: invoice_date <- "date" (type date; value on line: yes; below: no)
+  p.1 line 4 col 1: invoice_number <- "invoice" (type ref; value on line: yes; below: no)
+  p.1 line 6 col 1: total <- "amount due" (type money; value on line: yes; below: no)
+--- stderr

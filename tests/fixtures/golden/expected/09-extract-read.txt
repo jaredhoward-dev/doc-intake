@@ -1,0 +1,36 @@
+$ host.py read 9d269a76 - paystub p1.txt --reason golden extract
+rc=0
+--- stdout
+# doc-intake redacted extract
+# source: inbox/paystub.txt
+# sha256: 9d269a764d175311f8ab55f0ffcf60c927089bc582e0062ed0f74cae6fad52ac
+# pages: 1 of 1
+# text: text
+# redacted: routing 1, account 1, employee-id 1
+# llm-check: off
+# llm-flags: none
+# needs-review: no
+# approved: yes
+# approved-at: <NOW>
+# approved-hash: <HASH>
+# keep: no
+# created: <NOW>
+# WARNING: redaction is pattern-based and can miss things: names, addresses and phone numbers in other
+#   layouts than the detectors know, and numbers broken up by OCR errors, are not caught. The model pass,
+#   when used, is best-effort and nondeterministic.
+# ----
+--- page 1 ---
+Example Payroll Co   Earnings Statement
+Pay date: 01/15/2030    Pay period: 01/01/2030 - 01/14/2030
+Employee ID [EMPLOYEE-ID]
+Earnings        Rate     Hours    Current      YTD
+Regular         25.00    80.00    2,000.00     2,000.00
+Gross Pay                         2,000.00     2,000.00
+Federal Income Tax                  200.00       200.00
+State Income Tax                     81.00        81.00
+Social Security                     124.00       124.00
+Medicare                             29.00        29.00
+401(k)                              100.00       100.00
+Net Pay                           1,372.00     1,372.00
+Direct deposit  Routing [ROUTING]  Account [ACCOUNT-last4:8901]   1,372.00
+--- stderr

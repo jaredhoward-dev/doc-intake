@@ -1,0 +1,13 @@
+Example Payroll Co   Earnings Statement
+Pay date: 01/15/2030    Pay period: 01/01/2030 - 01/14/2030
+Employee ID 00123456
+Earnings        Rate     Hours    Current      YTD
+Regular         25.00    80.00    2,000.00     2,000.00
+Gross Pay                         2,000.00     2,000.00
+Federal Income Tax                  200.00       200.00
+State Income Tax                     81.00        81.00
+Social Security                     124.00       124.00
+Medicare                             29.00        29.00
+401(k)                              100.00       100.00
+Net Pay                           1,372.00     1,372.00
+Direct deposit  Routing 111111118  Account 12345678901   1,372.00

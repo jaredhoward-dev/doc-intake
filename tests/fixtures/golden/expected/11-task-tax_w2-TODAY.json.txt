@@ -1,0 +1,41 @@
+{
+ "approved": true,
+ "dropped": {},
+ "fields": {
+  "inbox/w2-2030.txt": [
+   "w2.box1_wages",
+   "w2.box2_federal_income_tax_withheld",
+   "w2.box3_social_security_wages",
+   "w2.box4_social_security_tax_withheld",
+   "w2.box5_medicare_wages",
+   "w2.box6_medicare_tax_withheld"
+  ]
+ },
+ "keep": false,
+ "keys": [
+  "approved",
+  "approved_at",
+  "approved_hash",
+  "created",
+  "dropped",
+  "keep",
+  "missing",
+  "model",
+  "profile_sha256",
+  "sources",
+  "task",
+  "values"
+ ],
+ "missing": [
+  "w2.box12a",
+  "w2.box12b",
+  "w2.box12c",
+  "w2.box12d",
+  "w2.box16_state_wages",
+  "w2.box17_state_income_tax"
+ ],
+ "sources": [
+  "inbox/w2-2030.txt"
+ ],
+ "task": "tax_w2"
+}

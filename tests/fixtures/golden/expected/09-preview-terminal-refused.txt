@@ -1,0 +1,5 @@
+$ host.py preview receipt-<TODAY>.json
+rc=2
+--- stdout
+--- stderr
+host: preview is for the user's own terminal; the assistant reads only approved task files, with read (preview --html writes a page only the user opens)

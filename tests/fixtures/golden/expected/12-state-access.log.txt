@@ -1,0 +1,11 @@
+<NOW>	pairs	.doc-intake/tasks	vendor,date,total,numbers	reason=pair agreement
+<NOW>	approve	.doc-intake/tasks/receipt-<TODAY>.json	task via=desktop	reason=
+<NOW>	approve	.doc-intake/tasks/invoice-<TODAY>.json	task via=desktop	reason=
+<NOW>	approve	.doc-intake/tasks/tax_w2-<TODAY>.json	task via=desktop	reason=
+<NOW>	pairs	.doc-intake/tasks	vendor,date,total,numbers	reason=pair agreement
+<NOW>	pairs	.doc-intake/tasks	vendor,date,total,numbers	reason=pair agreement
+<NOW>	read	.doc-intake/tasks/tax_w2-<TODAY>.json	fields=w2.box1_wages,w2.box2_federal_income_tax_withheld,w2.box3_social_security_wages,w2.box4_social_security_tax_withheld,w2.box5_medicare_wages,w2.box6_medicare_tax_withheld	reason=golden test
+<NOW>	extract	inbox/paystub.txt	pages=1	reason=user asked
+<NOW>	approve	.doc-intake/extracts/9d269a76 - paystub p1.txt	extract via=desktop	reason=
+<NOW>	read	.doc-intake/extracts/9d269a76 - paystub p1.txt	pages=1 of 1	reason=golden extract
+<NOW>	keep	.doc-intake/tasks/paystub-<TODAY>.json	task	reason=

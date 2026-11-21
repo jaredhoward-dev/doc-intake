@@ -1,0 +1,6 @@
+$ host.py preview --html --no-open receipt-<TODAY>.json
+rc=0
+--- stdout
+wrote .doc-intake/previews/receipt-<TODAY>.html: 3 documents, 3 complete, 3 flagged; 3 cards open to check (a value looks wrong 3, pair total differs 1), 0 collapsed; values shown as line 13, without a location 0 (it holds values: only the user opens it)
+tip: open it in a private window: firefox --private-window "<ROOT>/.doc-intake/previews/receipt-<TODAY>.html"
+--- stderr

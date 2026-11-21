@@ -87,6 +87,10 @@ def privacy_terms():
 
 
 def configure():
+    """Reset every setting to the engine's default, then apply this host's: hooks a test set don't linger."""
+    from doc_intake.config import CFG, Config
+    for k, v in vars(Config()).items():
+        setattr(CFG, k, v)
     doc_intake.configure(
         root=root, inbox=lambda: INBOX, state=STATE, profiles_dir=PROFILES, senders_file=SENDERS, route=route,
         model=lambda: os.environ.get("DOC_INTAKE_MODEL", ""), privacy_terms=privacy_terms, cli=CLI,

@@ -1,0 +1,6 @@
+EXAMPLE PRINT SHOP
+Receipt
+Transaction date 02/03/2030
+Flyers           20.00
+TOTAL            $21.00
+Thank you for your purchase

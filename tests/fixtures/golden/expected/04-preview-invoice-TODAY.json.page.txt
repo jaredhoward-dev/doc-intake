@@ -1,0 +1,11 @@
+{
+ "approve_hint": true,
+ "badges": [
+  "1 flagged",
+  "1 flagged"
+ ],
+ "cards": 2,
+ "check_warn": 0,
+ "open": 2,
+ "pair_alert": true
+}

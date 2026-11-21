@@ -1,0 +1,8 @@
+EXAMPLE SOFTWARE CO
+Receipt
+01/09/2030
+Monthly plan     9.00
+Tax              0.54
+TOTAL            $9.54
+Paid with card ending 1111
+Thank you

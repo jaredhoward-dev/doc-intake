@@ -1,0 +1,258 @@
+{
+ "name": "auto_loan_statement",
+ "description": "A vehicle lender's periodic or year-end statement: the statement date or period, the scheduled payment and due date, principal and interest paid for the period and year to date when the statement splits them, the principal, outstanding or payoff balance, the maturity date, and the lender. Some lenders' monthly statements show the payment, the outstanding balance and the maturity date but no principal and interest split.",
+ "source": "Laid out as a lender's monthly statement: a summary block (statement date, past due payment amount, current payment, total amount due, payment due date), a payment and transaction history, the outstanding balance and maturity date, and a payoff note; generic lenders' breakdowns (paid this period and year to date) by label. An example profile for the tests.",
+ "never": [
+  "the account and contract numbers",
+  "the VIN",
+  "names",
+  "the mailing address",
+  "phone numbers and email"
+ ],
+ "default_group": "loan",
+ "groups": {
+  "loan": {
+   "global": true
+  }
+ },
+ "fields": [
+  {
+   "group": "loan",
+   "name": "statement_date",
+   "type": "date",
+   "document_date": true,
+   "required": true,
+   "labels": [
+    "statement date",
+    "statement closing date",
+    "date of statement",
+    "statement as of",
+    "as of date",
+    "bill date",
+    "billing date",
+    "statement issued"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "period_start",
+   "type": "date",
+   "range": 0,
+   "labels": [
+    "statement period",
+    "billing period",
+    "activity period",
+    "activity from"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "period_end",
+   "type": "date",
+   "range": 1,
+   "labels": [
+    "statement period",
+    "billing period",
+    "activity period",
+    "period ending",
+    "activity through"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "payment_amount",
+   "type": "money",
+   "required": true,
+   "labels": [
+    "monthly payment amount",
+    "regular monthly payment",
+    "regular payment amount",
+    "regular payment",
+    "monthly payment",
+    "scheduled payment",
+    "current payment",
+    "payment amount",
+    "current amount due",
+    "total amount due",
+    "amount due"
+   ],
+   "not": [
+    "past due",
+    "late"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "payment_due_date",
+   "type": "date",
+   "labels": [
+    "payment due date",
+    "due date",
+    "next payment due"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "past_due_amount",
+   "type": "money",
+   "labels": [
+    "past due payment amount",
+    "past due amount",
+    "amount past due",
+    "past due"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "principal_paid",
+   "type": "money",
+   "labels": [
+    "principal paid this period",
+    "principal paid",
+    "principal applied",
+    [
+     "principal",
+     "current"
+    ]
+   ],
+   "not": [
+    "balance",
+    "ytd",
+    "year to date",
+    "remaining",
+    "unpaid",
+    "outstanding"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "interest_paid",
+   "type": "money",
+   "labels": [
+    "interest paid this period",
+    "interest paid",
+    "interest applied",
+    "finance charge paid",
+    [
+     "interest",
+     "current"
+    ]
+   ],
+   "not": [
+    "ytd",
+    "year to date",
+    "rate",
+    "accrued",
+    "per diem",
+    "daily",
+    "this year",
+    "in 20"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "principal_paid_ytd",
+   "type": "money",
+   "labels": [
+    "principal paid ytd",
+    "ytd principal paid",
+    "ytd principal",
+    "year to date principal",
+    "principal paid year to date",
+    "principal paid this year",
+    [
+     "principal",
+     "ytd"
+    ]
+   ],
+   "not": [
+    "balance",
+    "remaining",
+    "unpaid",
+    "outstanding"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "interest_paid_ytd",
+   "type": "money",
+   "labels": [
+    "interest paid ytd",
+    "ytd interest paid",
+    "ytd interest",
+    "year to date interest",
+    "interest paid year to date",
+    "interest paid this year",
+    "total interest paid",
+    [
+     "interest",
+     "ytd"
+    ]
+   ],
+   "not": [
+    "rate",
+    "accrued",
+    "per diem",
+    "daily"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "principal_balance",
+   "type": "money",
+   "labels": [
+    "current principal balance",
+    "unpaid principal balance",
+    "principal balance",
+    "remaining principal",
+    "outstanding principal",
+    "loan balance",
+    "remaining balance"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "outstanding_balance",
+   "type": "money",
+   "labels": [
+    "outstanding balance",
+    "current balance",
+    "account balance"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "payoff_amount",
+   "type": "money",
+   "labels": [
+    "payoff amount",
+    "estimated payoff",
+    "payoff quote",
+    "10-day payoff",
+    "payoff"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "maturity_date",
+   "type": "date",
+   "labels": [
+    "maturity date",
+    "final payment date",
+    "loan maturity"
+   ]
+  },
+  {
+   "group": "loan",
+   "name": "lender",
+   "type": "org_name",
+   "known_vendor": "lender",
+   "labels": [
+    "lender",
+    "creditor",
+    "lienholder"
+   ],
+   "label_at_cell_start": true
+  }
+ ]
+}

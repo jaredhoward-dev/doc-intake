@@ -1,0 +1,14 @@
+From: Example Garden Store <orders@example.com>
+To: someone@example.com
+Subject: Your order receipt
+Date: Mon, 04 Mar 2030 10:15:00 -0500
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+EXAMPLE GARDEN STORE
+Order receipt
+Order date 03/04/2030
+Seed starter kit   15.00
+Tax                 0.90
+Order total        $15.90
+Paid with card ending 4444

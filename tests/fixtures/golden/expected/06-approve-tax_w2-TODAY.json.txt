@@ -1,0 +1,5 @@
+$ host.py approve tax_w2-<TODAY>.json
+rc=0
+--- stdout
+approved: tax_w2-<TODAY>.json (1 documents, 6 fields)
+--- stderr

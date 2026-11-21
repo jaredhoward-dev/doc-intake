@@ -1,0 +1,5 @@
+$ host.py read paystub-<TODAY>.json --reason golden test
+rc=2
+--- stdout
+--- stderr
+host: paystub-<TODAY>.json is not approved: the user previews it, then approves it

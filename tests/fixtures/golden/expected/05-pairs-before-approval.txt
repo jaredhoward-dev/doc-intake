@@ -1,0 +1,5 @@
+$ host.py pairs
+rc=0
+--- stdout
+0 pair(s), 0 mismatch(es), 0 unmatched
+--- stderr
