@@ -8,7 +8,7 @@ import stat
 import pytest
 from helpers import ACCOUNT, CARD, FAKES, SSN
 
-from doc_intake import CFG, cli, llm, places, reader
+from doc_intake import CFG, cli, llm, places, reader, tasks
 from doc_intake.cli import ConfigError
 from doc_intake.scan import NO_PROFILE
 
@@ -259,6 +259,7 @@ def test_wrong_through_the_cli(e2e, monkeypatch, capsys):
     assert "own terminal" in got.err and "12.34" not in got.out + got.err   # refused, and shows nothing
     with monkeypatch.context() as m:   # the user's terminal: like fields there, it shows the user the new values
         m.setattr(places, "is_tty", lambda: True)
+        m.setattr(tasks, "stdin_is_tty", lambda: True)   # wrong wants stdin a terminal too
         assert cli.main(c + ["wrong", task.name, "--doc", "1", "--field", "total", "--reason", "test"]) == 0
     assert "marked wrong: receipt.total in document 1" in capsys.readouterr().out
     assert cli.main(c + ["read", task.name, "--reason", "test"]) == 2   # the approved task was superseded
