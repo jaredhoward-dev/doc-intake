@@ -87,12 +87,15 @@ def _mb(maxrss):
 
 
 def profile_line(relp, size, ftype, pages, method, info, result):
-    """One --profile-mem line: names, sizes, types, page counts and memory, never content."""
+    """One --profile-mem line: names, sizes, types, page counts, memory and whether the memory cap applied
+    (mem_cap=yes, no where the OS refused it, - when the file wasn't read in a bounded child), never content."""
     peak = info.get("peak_rss_mb") if info else None
     secs = info.get("seconds") if info else None
+    cap = {True: "yes", False: "no"}.get(info.get("capped") if info else None, "-")
     return (f"mem: {relp}  size={size}  type={ftype}  pages={pages if pages is not None else '-'}  "
             f"method={method or '-'}  peak_rss_mb={peak if peak is not None else '-'}  "
-            f"secs={secs if secs is not None else '-'}  result={result}")
+            f"secs={secs if secs is not None else '-'}  mem_cap={cap}  "
+            f"result={result}")
 
 
 def _load_records_cache(p):
