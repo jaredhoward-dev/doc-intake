@@ -162,6 +162,63 @@ def test_misread_card_beside_other_groups_is_a_number(text):
     assert not re.search(r"\d{4}", red), text
 
 
+@pytest.mark.parametrize("text,card,want", [
+    ("2315 2594 2487 3782 822463 10005 9835", "3782 822463 10005", "[CARD-last4:0005] 9835"),  # 9835 isn't the card's
+    ("2558.4012.8888.8888.1881", "4012.8888.8888.1881", "[CARD-last4:1881]")])
+def test_valid_stretch_overlapping_a_card_leaves_nothing(text, card, want):
+    # 2315259424873782 and 2558401288888888 pass is_card by chance and overlap the real test card
+    s0 = text.index(card)
+    spans = detect.find_spans(text)
+    assert all(any(s <= k < e for s, e, _, _ in spans) for k in range(s0, s0 + len(card)) if text[k].isdigit())
+    red, c = detect.redact(text)
+    assert c == {"card": 1} and red == want
+
+
+PUBLISHED_CARDS = [(CARD, (4, 4, 4, 4)), ("5555555555554444", (4, 4, 4, 4)), ("378282246310005", (4, 6, 5)),
+                   ("6011111111111117", (4, 4, 4, 4)), ("4012888888881881", (4, 4, 4, 4))]
+
+
+def test_card_among_random_digit_groups_is_always_covered():
+    rng = random.Random(20301105)
+    for _ in range(3000):
+        card, shape = rng.choice(PUBLISHED_CARDS)
+        sep = rng.choice(" .-")
+        pos, groups = 0, []
+        for n in shape:
+            groups.append(card[pos:pos + n])
+            pos += n
+        before = ["".join(rng.choice("0123456789") for _ in range(rng.randint(1, 6))) for _ in range(rng.randint(0, 4))]
+        after = ["".join(rng.choice("0123456789") for _ in range(rng.randint(1, 6))) for _ in range(rng.randint(0, 3))]
+        head = sep.join(before) + sep if before else ""
+        text = "Ref " + head + sep.join(groups + after) + " end"
+        s0 = len("Ref ") + len(head)
+        spans = detect.find_spans(text)
+        assert all(any(s <= k < e for s, e, _, _ in spans)
+                   for k in range(s0, s0 + len(sep.join(groups))) if text[k].isdigit()), (before, after, sep)
+
+
+def test_twenty_digit_spaced_run_is_pinned():
+    # 4000 0000 0000 0000 0006: no 13-19 digit stretch passes Luhn, and 0006 is neither short nor expiry-shaped
+    # (month 00), so the misread fallback leaves the run alone (a known gap, listed in docs/engine.md Limits).
+    assert detect.find_spans("4000 0000 0000 0000 0006") == []
+
+
+@pytest.mark.parametrize("text,n", [("Card 4111 1111 1111 1112 1234", 1),  # 1234 reads as MMYY 12/34
+                                    ("4111 1111 1111 1112 2030", 1), ("4111 1111 1111 1112 0630 123", 1),
+                                    ("Exp 2030 4111 1111 1111 1112", 1),
+                                    ("4111 1111 1111 1112 5555 5555 5555 4443", 2)])
+def test_misread_card_beside_an_expiry_or_another_card_is_a_number(text, n):
+    assert detect.counts(detect.find_spans(text)) == {"long-number": n}
+    red, _ = detect.redact(text)
+    assert not re.search(r"\d{4}", red), red
+
+
+@pytest.mark.parametrize("text", ["2030-0042-0017-0003-0001", "2030-0042-0017-0003-0012", "1234-5678-9012-3456-2030",
+                                  "2030-1111-2222-3333-4444"])
+def test_five_group_ids_stay_clean(text):
+    assert detect.find_spans(text) == []  # no card issuer prefix, or a fifth group that isn't an expiry
+
+
 def test_ssn_rules():
     assert detect.ssn_kind("000", "12", "3456") is None
     assert detect.ssn_kind("666", "12", "3456") is None
