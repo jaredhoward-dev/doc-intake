@@ -20,8 +20,7 @@ from helpers import ACCOUNT, CARD, EIN, FAKES, ROUTING, SSN, drop, mode, rec, ru
 
 INBOX = host.INBOX
 STATE = host.STATE
-# the known-senders map sits beside the profiles but is not one
-PROFILES = [n for n in fx.profile_names() if n != os.path.splitext(os.path.basename(host.SENDERS))[0]]
+PROFILES = fx.profile_names()  # the known-senders map beside them is never listed
 
 
 

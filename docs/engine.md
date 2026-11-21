@@ -84,6 +84,10 @@ engine.configure(
 scan.cmd_scan(args)
 ```
 
+The known-senders map may sit in the profiles folder under any name: the file `senders_file` names is never listed
+as a profile, and `fields --task <its name>` is refused. A file named `vendors.json` there is skipped too, for a
+host that keeps the map under that name without configuring `senders_file`.
+
 `route(path, ftype, redacted_text, title_fn=None, **opts)` returns a dict with `category`, `profile`, `dest`,
 `name`, `note`, `date_from_file` and `name_from_model`. It sees only redacted text. Hosts register their own value
 types for their own profiles with `fields.register_type()`.

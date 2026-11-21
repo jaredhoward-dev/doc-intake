@@ -6,7 +6,8 @@ configure() once at start-up with:
 - root: a function returning the records root (read on every call, so a test or a changed environment is seen);
 - inbox: a function returning the inbox folder's name under the root;
 - state: the state folder's name under the root (default ".doc-intake");
-- profiles_dir and senders_file: the folder of field profiles and the known-senders map (fields.py);
+- profiles_dir and senders_file: the folder of field profiles and the known-senders map (fields.py); the map may
+  sit in the profiles folder under any name, and is never listed or loaded as a profile;
 - route(path, ftype, redacted_text, title_fn=None, **opts): where a screened document would go, as a dict with
   category, profile, dest, name, note, date_from_file and name_from_model (see scan.screen);
 - model: a function returning the local model's name for the optional model pass, or "";
