@@ -90,6 +90,14 @@ def test_run_bounded_says_whether_the_cap_applied(monkeypatch, applies):
     assert reader.uncapped_reads() == (0 if applies else 2)
 
 
+def test_run_bounded_child_dying_before_the_cap_byte_is_unknown_not_uncapped(monkeypatch):
+    monkeypatch.setattr(reader, "cap_address_space", lambda nbytes: os._exit(7))
+    reader.reset_uncapped()
+    value, info = reader.run_bounded(lambda: 1, mem_mb=256, timeout=30)
+    assert value is None and not info["ok"] and info["capped"] is None and info["reason"] == "failed"
+    assert reader.uncapped_reads() == 0
+
+
 def test_run_bounded_refused_cap_is_reported(monkeypatch):
     refuse_rlimit_as(monkeypatch)
     _, info = reader.run_bounded(lambda: 1, mem_mb=256, timeout=30)
@@ -412,7 +420,7 @@ def test_profile_mem_logs_names_and_numbers_never_content(rec, capsys):
     lines = [x for x in cap.err.splitlines() if x.startswith("mem: ")]
     assert any("Archive/notes.txt" in x and "type=text" in x and "result=fingerprinted" in x
                and "peak_rss_mb=" in x for x in lines)
-    assert any("Media/clip.mp4" in x and "sha256 only" in x for x in lines)
+    assert any("Media/clip.mp4" in x and "sha256 only" in x and "mem_cap=-" in x for x in lines)
     assert any("inbox/new notes.txt" in x and "method=text" in x for x in lines)
     assert any(x.startswith("mem: total") for x in lines)
     names = cap.err.replace("new notes.txt", "").replace("notes.txt", "")
