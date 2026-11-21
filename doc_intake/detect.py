@@ -40,7 +40,12 @@ _SSN_DASHED = re.compile(r"(?<![\d-])(\d{3})-(\d{2})-(\d{4})(?![\d-])")
 _SSN_CTX = re.compile(r"(?i:\b(?:ssn|social\s+security(?:\s+(?:number|no\.?))?|soc\.?\s*sec\.?|itin"
                       r"|taxpayer\s+identification\s+number|tin)\b)\D{0,80}?(?<!\d)(\d{3})[ -]?(\d{2})[ -]?(\d{4})(?!\d)")
 _CARD = re.compile(r"(?<![\d-])\d(?:[ -]?\d){12,18}(?![\d-])")
-_CARD_GROUPED = re.compile(r"^\d{4}([ -]?)\d{4}\1\d{4}\1\d{1,7}$")
+# Dotted cards are written in groups, every separator a dot: 4-4-4-4 (13 to 19 digits as 4-4-4-1..4-4-4-4-3) or
+# Amex/Diners 4-6-5 / 4-6-4. Group lengths keep out thousands (1.234.567), versions, IPs, dates and decimals; a dot
+# only counts as a boundary when no digit sits on its other side.
+_CARD_DOTTED = re.compile(r"(?<![\d-])(?<!\d[.,])\d{4}\.(?:\d{4}\.\d{4}\.\d{1,4}(?:\.\d{1,3})?|\d{6}\.\d{4,5})"
+                          r"(?![\d-])(?![.,]\d)")
+_CARD_GROUPED = re.compile(r"^\d{4}([ .-]?)\d{4}\1\d{4}\1\d{1,7}$")
 _NINE = re.compile(r"(?<![\d-])\d{9}(?![\d-])")
 _EIN = re.compile(r"(?<![\d-])\d{2}-\d{7}(?![\d-])")
 _MBI = re.compile(r"\b[1-9][AC-HJKMNP-RT-Y][0-9AC-HJKMNP-RT-Y]\d-?[AC-HJKMNP-RT-Y][0-9AC-HJKMNP-RT-Y]\d-?"
@@ -211,7 +216,7 @@ def raw_spans(text):
         k = ssn_kind(*m.groups())
         if k:
             out.append((m.start(1), m.end(3), k))
-    for m in _CARD.finditer(text):
+    for m in (*_CARD.finditer(text), *_CARD_DOTTED.finditer(text)):
         digits = re.sub(r"\D", "", m.group(0))
         if is_card(digits):
             add(m, "card")
