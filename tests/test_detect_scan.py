@@ -36,6 +36,10 @@ def test_approve_refuses_without_a_terminal(rec, capsys):
     (f"card {CARD}", "card"),
     (f"card {CARD_SPACED}", "card"),
     ("amex 378282246310005", "card"),
+    ("card 4111.1111.1111.1111", "card"),
+    ("card 5555.5555.5555.4444", "card"),
+    ("amex 3782.822463.10005", "card"),
+    ("Card No.6011.1111.1111.1117.", "card"),
     (f"routing {ROUTING}", "routing"),
     (f"Account number: {ACCOUNT}", "account"),
     ("Date of birth: 01/02/1980", "dob"),
@@ -88,6 +92,14 @@ def test_aba_rejects_random_digits():
     assert not detect.aba_ok("123456789") and detect.aba_ok(ROUTING)
 
 
+def test_dotted_card_needs_luhn_and_card_groups():
+    assert detect.counts(detect.find_spans("card 4111.1111.1111.1112")) == {"long-number": 1}  # fails Luhn
+    for t in ("1.234.567", "1,234.56", "$4,111.11", "v1.2.3.4", "192.168.1.1", "2030.01.05", "Total 4111.11",
+              "4111.1111", "1234.5678.90"):
+        assert detect.find_spans(t) == [], t
+    assert "card" not in detect.counts(detect.find_spans("pi 3.14159265358979"))
+
+
 def test_ssn_rules():
     assert detect.ssn_kind("000", "12", "3456") is None
     assert detect.ssn_kind("666", "12", "3456") is None
@@ -103,12 +115,14 @@ def test_plain_text_is_left_alone():
 def test_redaction_leaves_no_fake_value():
     text = "\n".join([f"SSN {SSN}", f"Card {CARD_SPACED}", f"Routing {ROUTING} Account {ACCOUNT}",
                       "DOB: 01/02/1980", f"Medicare {MBI}", "Passport No. C12345678", "Member ID: XYZ123456789",
-                      "Employee ID 00123456", f"EIN {EIN}", "someone@example.com"])
+                      "Employee ID 00123456", f"EIN {EIN}", "someone@example.com",
+                      "Visa 5555.5555.5555.4444", "Amex 3782.822463.10005"])
     red, c = detect.redact(text)
-    for v in FAKES[:-1]:
+    for v in FAKES[:-1] + ["5555.5555", "822463", "10005"]:
         assert v not in red
     assert "[CARD-last4:1111]" in red and "[ACCOUNT-last4:8901]" in red and "[SSN]" in red
-    assert c["ssn"] == 1 and c["card"] == 1
+    assert "Visa [CARD-last4:4444]\n" in red and red.endswith("Amex [CARD-last4:0005]")
+    assert c["ssn"] == 1 and c["card"] == 3
 
 
 # ---------------------------------------------------------------- scan and held

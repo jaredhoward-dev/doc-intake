@@ -588,7 +588,6 @@ def test_box_row_never_takes_a_sensitive_figure():
     assert _boxes(ROUTING, "123456789") == (["second"], {"routing": 1})  # 123456789 fails the ABA check
 
 
-@pytest.mark.xfail(strict=True, reason="dotted card digits are not detected (detect.py); next round")
 def test_a_dotted_card_number_is_never_a_money_value():
     got, dropped = _run(_one("money", [["total due", "line"]]), "Total Due  4111.1111.1111.1111\n")
     assert got == {} and dropped == {"card": 1}
