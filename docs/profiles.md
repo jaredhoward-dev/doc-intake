@@ -93,7 +93,9 @@ longer number when, at its first or last digit, it is glued to:
   `12.50/3.00`, `Invoice 12345-1` and the range `01/01/2030-01/14/2030` keep their figures);
 - for a bare digit run (no decimals, no `$`), a dash or slash and any digits before it (`345678` out of
   `12-345678`, `56` out of `12-34-56`), or after it a short piece that is joined on again (`123` out of
-  `123-456-7890`). `12345` in `Invoice 12345-1` keeps its short suffix apart.
+  `123-456-7890`). `12345` in `Invoice 12345-1` keeps its short suffix apart, and two figures stay separate when
+  they are a month and year (one or two digits, then a 19xx or 20xx year: `Statement 12/2030`) or a short pair of
+  one to three digits each that isn't joined on again (`Page 3/10`, `Net 15/30`, `12-24 months`, `100-200`).
 
 A figure of any type but `date` that takes part of a date on its line is a piece too, so a `year` field never takes
 `2030` out of `12/31/2030`, and nothing takes `01-14` out of `2030-01-14`. A minus before an amount (`-5.00`) and a

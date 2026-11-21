@@ -562,6 +562,18 @@ _THOUSANDS_AFTER = re.compile(r"\d{3}(?!\d)")
 LONG_PIECE = 4
 
 
+def _separate_pair(before, first, mine, after):
+    """True when a bare digit run (mine) after first and a dash or slash is a figure of its own, not the end of one
+    number: a month and year ("12/2030", "3-2031": one or two digits, then a 19xx or 20xx year), or a short pair
+    (both sides one to three digits: "3/10", "15/30", "12-24", "100-200"), when neither side is joined on again
+    ("12-34-56" and "123-45-67" are one number). before is the text ahead of first, after what follows mine."""
+    if re.search(r"\d[-/]$", before):
+        return False
+    if len(first) <= 2 and re.fullmatch(r"(?:19|20)\d\d", mine):
+        return True
+    return len(first) <= 3 and len(mine) <= 3 and not re.match(r"[-/]\d", after)
+
+
 def cut_from_longer(text, s, e, ftype=None):
     """True when text[s:e], read on its whole line, is a piece of a longer number: the value-below rule and
     "column_before" read a slice of a line, and a slice's edge can fall inside an account or meter number
@@ -574,8 +586,9 @@ def cut_from_longer(text, s, e, ftype=None):
     - a dash or slash and a run of LONG_PIECE or more digits that is not a whole date of its own ("5678.00" out of
       "1234-5678.00"; "01/01/2030-01/14/2030" is a range of two dates). A bare digit run (no decimals, no "$") is
       held tighter: after a dash or slash and any digits it is the end of one number ("345678" out of "12-345678",
-      "56" out of "12-34-56"), and before one it is the start of one when a short piece is followed by another
-      join ("123" out of "123-456-7890"); "12345" in "12345-1" keeps its short suffix apart.
+      "56" out of "12-34-56") unless the two make a month and year or a short pair (_separate_pair: "12/2030",
+      "3/10", "100-200"), and before one it is the start of one when a short piece is followed by another join
+      ("123" out of "123-456-7890"); "12345" in "12345-1" keeps its short suffix apart.
     A figure of any type but date that takes part of a date on its line is a piece too ("2030" out of "12/31/2030",
     "01-14" out of "2030-01-14"); a date's own value is never part of one. A lone minus ("-5.00") and a "$" start
     are a figure's own."""
@@ -601,8 +614,11 @@ def cut_from_longer(text, s, e, ftype=None):
         if c == "," and run and len(run.group(1)) <= 3 and not left[:run.start()].endswith(".") \
                 and _THOUSANDS_AFTER.match(line, a):
             return True
-        if c in "-/" and run and (bare or len(run.group(1)) >= LONG_PIECE) and not whole_date(run.start(), run.end()):
-            return True  # a bare run after "12-" is the end of one number; an amount needs a long piece before it
+        if c in "-/" and run and not whole_date(run.start(), run.end()):
+            if len(run.group(1)) >= LONG_PIECE:
+                return True
+            if bare and not _separate_pair(left[:run.start()], run.group(1), line[a:b], line[b:b + 2]):
+                return True  # a bare run after "12-" is the end of one number ("345678" out of "12-345678")
     if line[b - 1].isdigit() and b < len(line):
         c = line[b]
         run = _RUN_AFTER.match(line, b + 1)
