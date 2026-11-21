@@ -58,7 +58,8 @@ only when the user asks for one; it is approved and read the same way.
 
 **wrong TASK_JSON --doc N --field GROUP.FIELD** (instead of approving, when a value is wrong): the user marks one
 value wrong. The review page prints this command beside every value (`--plan` and `--row` added where a field repeats;
-field names may be written with dashes). Like `approve` it runs only in the user's own terminal: marking values
+field names may be written with dashes). Like `approve` it runs only in the user's own terminal (stdin and stdout both terminals, so `> /dev/tty` with a
+piped stdin is refused): marking values
 wrong steers what `fields` takes, so the assistant never runs it; it can point at a value and hand the user the
 command. `wrong` adds a rejection to the task file's `rejected` list: the source's sha256, the field (group,
 plan, row, name), its page, its matched label and its character span on the page. It never stores the value or

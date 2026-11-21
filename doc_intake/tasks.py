@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from collections import Counter
 
 from . import approval, detect, fields as fx, llm, locate, places, preview, reader
@@ -394,12 +395,23 @@ def _missing_list(prof, records, plans):
             for w in missing_fields(prof, records, plans)]
 
 
+def stdin_is_tty():
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
 def cmd_wrong(args, out=print):
     """The user marks one value of one document wrong: record it in the task (field, page, matched label and spot,
     never the value or any text), re-run fields for that document only with that candidate kept out, and write a new
     unapproved task in place of an unapproved one, or beside an approved one, which is superseded (as fields
-    --replaces does). The other documents' values are carried over unchanged; approval never is."""
-    if not places.is_tty():  # marking a value wrong steers what fields takes: the user's call, like approve
+    --replaces does). The other documents' values are carried over unchanged; approval never is.
+
+    Only from the user's own terminal: stdin and stdout must both be terminals. approve has the desktop dialog as
+    its real check; wrong releases nothing and its result still needs approve, so this gate is defence in depth, but
+    stdout alone is too weak: a tool runner that can reach a controlling terminal passes it with "> /dev/tty" and
+    its own pipe on stdin. Opening /dev/tty (as approval.tty_io does) would add nothing: it only shows that a
+    controlling terminal exists, which the same process may have. Like every gate here it is a speed bump when the
+    assistant runs as the same OS user (docs/engine.md, Limits)."""
+    if not (places.is_tty() and stdin_is_tty()):  # marking a value wrong steers what fields takes: the user's call
         raise DocError(f"wrong is for the user's own terminal, after preview; {CFG.assistant} never marks values "
                        "wrong (it can say which one looks wrong and give the user the command)")
     p, kind = resolve_output(args.target)
