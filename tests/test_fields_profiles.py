@@ -806,7 +806,27 @@ def test_ordinary_amounts_still_extract(text, want):
     ("1,234,567.89", 6, 12, "money", True),      # head: a digit group then a comma
     ("1234-5678.00", 5, 12, "money", True),      # head: a dashed number
     ("4,500.00", 0, 4, "money", True),           # tail: a slice ending inside "4,500.00"
-    ("12.00/34", 0, 5, "money", True),           # tail: a slash then digits
+    ("12.00/3456", 0, 5, "money", True),         # tail: a slash then a long digit run
+    ("12.00/34", 0, 5, "money", False),          # a slash then a short run: another figure
+    ("Items 12.50,13.00", 6, 11, "money", False),     # a comma between two figures, not a thousands group
+    ("Items 12.50,13.00", 12, 17, "money", False),
+    ("Total: 12.50/3.00", 7, 12, "money", False),     # a slash between two figures
+    ("Total: 12.50/3.00", 13, 17, "money", False),
+    ("1,234", 0, 1, "money", True),              # tail: a comma and a thousands group
+    ("12,34", 0, 2, "count", False),             # a comma and two digits is no thousands group
+    ("Invoice 12345-1", 8, 13, "ref", False),    # a dash and a short suffix: the reference is whole
+    ("Invoice 12345-1", 14, 15, "count", True),  # but its "1" alone is the tail of the longer number
+    ("Ref 2030-0001", 9, 13, "ref", True),       # "0001" out of "2030-0001"
+    ("Ref 2030-0001", 4, 13, "ref", False),      # the whole reference
+    ("INV-2030-0042", 0, 13, "ref", False),
+    ("Call 555-0100", 5, 13, "ref", False),      # a phone-shaped reference, whole
+    ("Rate 3.875 % 12%", 5, 12, "percent", False),
+    ("Rate 3.875 % 12%", 13, 16, "percent", False),
+    ("2030-01-14", 0, 10, "date", False),        # an ISO date, whole
+    ("2030-01-14", 0, 9, "date", True),          # its day cut short
+    ("12/31/2030", 1, 10, "date", True),         # a US date missing its first digit
+    ("2030-01-14", 5, 10, "ref", True),          # "01-14" out of an ISO date
+    ("Due 2030-01-14", 4, 8, "year", True),      # its year
     ("$1,234.56", 0, 9, "money", False),         # the whole figure
     ("-5.00", 1, 5, "money", False),             # a lone minus
     ("$5.00-$6.00", 0, 5, "money", False),       # a dash then "$": another figure, not more digits
@@ -836,3 +856,62 @@ def test_box_row_and_table_amounts_still_extract():
     fx.check_profile(table)
     recs, dropped, _ = fx.extract(table, [(1, "Code      Fee\nD2740     $1,200.00\nD0120     60.00\n")], "x")
     assert sorted(r["value"] for r in recs if r["field"] == "fee") == ["$1,200.00", "60.00"] and dropped == {}
+
+
+def test_a_year_offered_a_slice_of_a_date_is_missing():
+    year = _one("year", ["year"])
+    assert _run(year, "Year\n12/31/2030\n") == ({}, {})   # the value-below column holds a date, not a year
+    assert _run(year, "Tax year:   2030\n") == ({"v": "2030"}, {})
+    assert _run(year, "Year\n2030\n") == ({"v": "2030"}, {})
+
+
+def test_a_column_before_cut_inside_a_number_takes_nothing():
+    # "column_before" stops the borrower's column at the "Seller" header; here that edge falls inside one number, so
+    # the slice's "4512.00" is no amount. A figure that ends before the edge is taken as usual.
+    head = "Description       Borrower   Seller\n"
+    cut = head.index("Seller")
+    prof = _one("money", ["recording fee"], column_before="seller")
+    line = "Recording fee".ljust(cut - len("4512.00")) + "4512.0078"
+    assert line[:cut].endswith("4512.00") and line[cut:cut + 2] == "78"
+    assert _run(prof, head + line + "\n") == ({}, {})
+    assert _run(prof, head + "Recording fee     $45.00     $10.00\n") == ({"v": "$45.00"}, {})
+
+
+def test_a_host_type_slice_of_a_longer_number_is_refused(vehicle_types):
+    """A host's registered type gets the same check through offer: a value whose last digit runs on into more digits
+    on the page is a piece of something else; the same value standing whole is kept."""
+    prof = _one("vehicle", ["vehicle"])
+    page = "Vehicle:  Ford F-15012\n"
+    ex = fx.Extraction(prof, pages=[(1, page)])
+    s = page.index("Ford")
+    ex.offer("g", None, None, "v", "vehicle", "Ford F-150", 1, "vehicle", "x", (s, s + 10))
+    assert ex.records() == []
+    assert _run(prof, "Vehicle:  Ford F-150\n") == ({"v": "Ford F-150"}, {})
+
+
+@pytest.mark.parametrize("ftype, page, value", [
+    ("short_text", "Note:  Example note7\n", "Example note"),
+    ("org_name", "From:  Example Co2\n", "Example Co"),
+    ("plan_name", "Plan:  Gold 12/31/2030\n", "Gold 12"),
+])
+def test_free_text_types_skip_the_check(ftype, page, value):
+    """Free-text types are whole cells: a digit or a date beside the value never turns it away."""
+    ex = fx.Extraction(_one(ftype, ["x"]), pages=[(1, page)])
+    s = page.index(value)
+    ex.offer("g", None, None, "v", ftype, value, 1, "x", "x", (s, s + len(value)))
+    assert [r["value"] for r in ex.records()] == [value]
+
+
+@pytest.mark.parametrize("ftype, page, value", [
+    ("ref", "Invoice #:  INV-2030-0042\n", "INV-2030-0042"),
+    ("ref", "Reference:  2030-0001\n", "2030-0001"),
+    ("ref", "Order:  12345-1\n", "12345-1"),
+    ("ref", "Phone ref:  555-0100\n", "555-0100"),
+    ("percent", "Rate:  3.875 %\n", "3.875 %"),
+    ("money", "Items:  12.50,13.00\n", "12.50"),
+    ("money", "Total:  12.50/3.00\n", "12.50"),
+    ("date", "Date:  2030-01-14\n", "2030-01-14"),
+])
+def test_dash_comma_and_slash_neighbours_still_extract(ftype, page, value):
+    got, dropped = _run(_one(ftype, [page.split(":")[0].lower()]), page)
+    assert got == {"v": fx.normalize(ftype, value)} and dropped == {}
