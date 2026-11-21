@@ -1,5 +1,5 @@
 ---
-description: Pre-commit gate. Runs code-reviewer, test-gap-checker and doc-hygiene-checker in parallel against the working diff and aggregates their findings. Advisory output; cheaper than /safe-edit. Use it before every non-trivial commit.
+description: Pre-commit gate. Runs code-reviewer, test-gap-checker and doc-hygiene-checker (plus detector-reviewer when the diff touches the detectors) in parallel against the working diff and aggregates their findings. Advisory output. Use it before every non-trivial commit.
 ---
 
 Run a parallel review of the working diff, aggregate the findings, and report. Advisory only: you don't apply fixes here; the user decides which to land.
@@ -18,7 +18,8 @@ Run a parallel review of the working diff, aggregate the findings, and report. A
 ## What this command does NOT do
 
 - Apply fixes. Each agent is read-only; the output is a list of gaps.
-- Replace `/safe-edit`'s coder and reviewer loop, which is for changes to delete paths, sidecar writes, the network boundary, the local servers or the detectors.
+- Replace a careful review loop. For a change to the detectors, the approval, `read`'s refusals or anything that prints, re-run `/check` after applying the findings until `code-reviewer` (and `detector-reviewer`) come back clean.
+- Read a real document. No agent does; every one reviews code and the synthetic fixtures under `tests/fixtures/` only.
 
 ## Procedure
 
@@ -32,11 +33,12 @@ If the diff is trivial, stop with a one-line "trivial — skipping `/check`".
 
 ### 3. Spawn the agents in parallel
 
-Send a single message with one Agent call per agent in `.claude/agents/engineering/`:
+Send a single message with one Agent call per agent below (all defined in `.claude/agents/engineering/`):
 
 - `code-reviewer`: "Review the working diff against this repo's hard rules. Output the strict format from your spec."
-- `test-gap-checker`: "Audit the working diff for missing unittest coverage per the CLAUDE.md tests-and-docs rule. Output the format from your spec."
-- `doc-hygiene-checker`: "Audit the working diff against the CLAUDE.md doc-update rule. Output which docs need updating."
+- `test-gap-checker`: "Audit the working diff for missing pytest coverage under tests/. Output the format from your spec."
+- `doc-hygiene-checker`: "Audit the working diff against the doc set (README.md, ROADMAP.md, docs/, CLAUDE.md, CONTRIBUTING.md, SECURITY.md). Output which docs need updating."
+- `detector-reviewer`, only when the diff touches `doc_intake/detect.py` or the code that calls it (`grep -n "detect\." doc_intake/*.py`: `fields.py`, `scan.py`, `tasks.py`, `snapshots.py`, `preview.py`, `reader.py`): "Review the detector change for false negatives, false positives, checksum rules, partial redaction and values reaching output. Output the format from your spec, with fake test values."
 
 If the change is already committed on a branch, say so in every prompt ("the diff is `git diff origin/main...HEAD`"), or the agents see an empty working diff.
 
@@ -59,11 +61,15 @@ Status: <CLEAN | NEEDS_CHANGES>
 ### Doc gaps (`doc-hygiene-checker`)
 <verbatim verdicts, or "doc set is clean">
 
+### Detectors (`detector-reviewer`, when run)
+Status: <CLEAN | NEEDS_CHANGES | not run: diff doesn't touch the detectors>
+<verbatim findings and proposed fake test cases>
+
 ### Recommendation
 <one of:>
 - Every agent came back clean; ready to commit.
 - Code review and docs are clean; <N> test gap(s). Land the tests now or record a follow-up.
-- <N> code-review finding(s); apply or push back before committing.
+- <N> code-review or detector finding(s); apply or push back before committing.
 - Gaps across review, tests and docs; list them and let the user pick.
 ```
 
@@ -73,4 +79,4 @@ Ask the user how to proceed. Don't apply fixes automatically, and don't commit.
 
 ## Tone
 
-The user sees a one-line "Running review, test-gap and doc checks...", the aggregated report, and a short question at the end. Don't narrate the fan-out.
+The user sees a one-line "Running review, test-gap and doc checks..." (add "and detector review" when it runs), the aggregated report, and a short question at the end. Don't narrate the fan-out.
