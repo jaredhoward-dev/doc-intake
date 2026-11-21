@@ -14,7 +14,8 @@ on your own desktop; only then can the assistant read them, and every read is lo
 - **Allowlisted fields only.** A profile names the fields to take; each value is checked against the
   detectors and dropped (and counted) if it overlaps one.
 - **Approval is yours.** Approving shows a desktop dialog; the approval seals the values with a
-  sha256, and a changed task file or source document is refused.
+  sha256, and a changed task file or source document is refused. Marking a value wrong (`wrong`) is
+  yours too: only from your own terminal, and the result is approved again.
 
 ## Status
 
@@ -44,12 +45,14 @@ file), then:
 
 `doc-intake scan` and so on are the same commands once installed.
 
-The `receipt` task is one of the example profiles in [profiles/](profiles/); [docs/profiles.md](docs/profiles.md)
+The `receipt` task is one of the example profiles in [profiles/](profiles/) (with `invoice` and
+`utility_bill`); [docs/profiles.md](docs/profiles.md)
 shows how to write your own.
 
 The config is found by `--config`, else `$DOC_INTAKE_CONFIG`, else `./doc-intake.toml`. You preview
-and approve in your own terminal (`preview`, then `approve`); the assistant only ever runs `read`
-with a reason. Commands, config keys and routing rules: [docs/cli.md](docs/cli.md).
+and approve in your own terminal (`preview`, then `approve`, or `wrong` to mark a value wrong and
+re-run that document); the assistant only ever runs `read` with a reason. `doctor` checks the setup
+without reading a document. Commands, config keys and routing rules: [docs/cli.md](docs/cli.md).
 
 ## Tests
 

@@ -6,8 +6,8 @@ Where things stand and how to pick the work up on another machine.
 
 - Stage 1 (the engine as `doc_intake/`, CI, docs) is on `main`.
 - Stage 2: the engine's tests against a fake host (`tests/host.py`), example profiles (`profiles/`,
-  [profiles.md](profiles.md)) and a minimal CLI ([cli.md](cli.md)) are done or in open pull requests;
-  see the tracker issue for which.
+  [profiles.md](profiles.md)) and a minimal CLI ([cli.md](cli.md)) are done and tagged `v0.1.0`.
+  Since then: `wrong`, `doctor`, `box_row`, a utility-bill example; see [ROADMAP.md](../ROADMAP.md).
 - The engine came from its first host; changes there after the copy must be carried over by hand
   until the host pins this package instead. Fixes made here (bounded reads on macOS, the senders map
   never listed as a profile) need carrying back the same way.

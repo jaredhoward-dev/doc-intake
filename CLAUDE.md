@@ -5,8 +5,10 @@ working on this repo and to using it.
 
 - **Never read a real document.** No `pdftotext`, `tesseract`, `cat` or the Read tool on a user's
   documents, inbox or state folder. The assistant reads only approved fields, through the tool.
-- **Never approve.** Approval is the user's click in a desktop dialog. Never run `approve` for the
-  user, and never use anything that could drive a terminal or a GUI to fake it.
+- **Never approve, never mark a value wrong.** Approval is the user's click in a desktop dialog, and
+  `wrong` steers what `fields` takes, so it is the user's too. Never run `approve` or `wrong` for the
+  user, and never use anything that could drive a terminal or a GUI to fake either. Say which value
+  looks wrong and give the user the command.
 - **Fixtures are synthetic.** Fake names, vendors and amounts; numbers that only pass checksums
   (test card numbers, example routing numbers). No real path, name or value in any commit.
 - **Stdlib only** in `doc_intake/` (plus optional `zxingcpp` and `PIL`, imported inside functions).

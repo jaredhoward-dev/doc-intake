@@ -22,7 +22,7 @@ The interfaces below may still change before the tagged `v0.1.0` release.
 
 | Module | What |
 | --- | --- |
-| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands; installed as the `doc-intake` command (`doc_intake.cli:main`) |
+| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands, and `doctor`, which checks the setup without reading a document; installed as the `doc-intake` command (`doc_intake.cli:main`) |
 | `config.py` | `configure()`: the records root, inbox, state folder, profiles, known-senders map, routing hook, model, private terms, `today` (the date document dates are judged against), and the few messages that name the host's setup |
 | `places.py` | The root, inbox and state folder; private writes (folders `0700`, files `0600`, atomic); the index of what was filed or held; the access log; sha256; moves that never overwrite |
 | `detect.py` | Sensitive-value detectors and redaction: counts per kind, never values. Checksums (Luhn, ABA, VIN) cut false positives |
@@ -49,6 +49,7 @@ The interfaces below may still change before the tagged `v0.1.0` release.
    terminal).
 4. **approve**: the user confirms in a desktop dialog; the approval stores a sha256 over the task's content and
    its sources' sha256s. With no display, `--terminal-confirm` asks for a random phrase typed back on `/dev/tty`.
+   If a value is wrong, the user runs `wrong` instead (below) and approves the new task.
 5. **read --reason**: the assistant reads an approved task file. `read` refuses one changed since approval, one
    whose source document changed, and a superseded one, and logs every read with its reason.
 
@@ -137,7 +138,9 @@ and any accounting stay in the host.
 
 Read these before trusting it:
 
-- **Detectors are pattern-based and US-centric.** SSNs, ABA routing numbers, US phone and address layouts. Names
+- **Detectors are pattern-based and US-centric.** SSNs, ABA routing numbers, US phone and address layouts. Card
+  numbers are found as plain digits, grouped with spaces or dashes, or in dotted card groups (4-4-4-4, 4-6-5,
+  4-6-4; narrow on purpose, so thousands, versions and IP addresses stay clean), all Luhn-checked. Names
   are not detected at all. Other layouts, other countries' formats and numbers broken up by OCR errors slip
   through.
 - **The local-model pass is best-effort and nondeterministic.** It only adds flags or fills fields that are then
