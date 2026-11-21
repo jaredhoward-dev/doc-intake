@@ -98,7 +98,7 @@ def _card_spans(text, quiet=None, overlong=None):
             out.append((m.start(), m.end(), "card"))
             if overlong is not None and _has_shorter_card(raw, groups, 0, len(groups) - 1):
                 overlong.add(out[-1][:2])
-            out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups))
+            out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups, text[max(0, base - 6):base]))
             continue
         found = len(out)
 
@@ -161,15 +161,17 @@ def _card_spans(text, quiet=None, overlong=None):
                 out.extend((base + groups[a][0], base + groups[z][1], "long-number")
                            for a, z in _misread_tiling(raw, groups, lo, hi))
         if len(out) > found or any(e - s >= 10 for s, e in groups):
-            out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups))
+            out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups, text[max(0, base - 6):base]))
     return out
 
 
-def _glued_ssns(raw, groups):
+def _glued_ssns(raw, groups, before=""):
     """[(start, end, kind)] of 3-2-4 dash groups in a run that pass ssn_kind but sit glued to the run by a dash
     (a card, a dash, then ddd-dd-dddd), where _SSN_DASHED's edges don't let it match. Only asked for a run that holds
     a card or a hidden number: the SSN outranks the card, so find_spans clips the card around it, and without this
-    the SSN's digits stayed in the text beside the card (or under its tag)."""
+    the SSN's digits stayed in the text beside the card (or under its tag). A run with a glued SSN also comes back
+    whole as long-number, which find_spans clips around the SSN and the cards: a labelled value the SSN cuts
+    (Driver license <run>-<SSN>-12345678) would otherwise leave its tail in the text."""
     out = []
     for i in range(len(groups) - 2):
         (a0, a1), (b0, b1), (c0, c1) = groups[i:i + 3]
@@ -180,6 +182,11 @@ def _glued_ssns(raw, groups):
         k = ssn_kind(raw[a0:a1], raw[b0:b1], raw[c0:c1])
         if k:
             out.append((a0, c1, k))
+    if out:  # the rest of the run is hidden too (a labelled value cut by the SSN would leave its tail in the text)
+        # not half a date: a run starting with the year of a dd/dd/yyyy date leaves the year to it
+        lo = 1 if re.search(r"\d/\d{1,2}/$", before) and groups[0][1] - groups[0][0] in (2, 4) else 0
+        if lo < len(groups):
+            out.append((groups[lo][0], groups[-1][1], "long-number"))
     return out
 
 
@@ -404,10 +411,16 @@ TAGS = {"ssn": "[SSN]", "itin": "[ITIN]", "routing": "[ROUTING]", "dob": "[DOB]"
         "long-number": "[NUMBER]"}
 
 
+_DASH_TAIL = re.compile(r"-\d+(?:[ .-]\d+)*(?![\d/])")  # a dash, then digit groups joined as in card runs, not a date
+_SSN_INSIDE = re.compile(r"(?<!\d)(\d{3})-(\d{2})-(\d{4})(?!\d)")
+
+
 def _tag(kind, value=""):
     if kind in HOLD_KINDS:
         return "[SECRET]"
     if kind in ("card", "account"):
+        if any(ssn_kind(*m.groups()) for m in _SSN_INSIDE.finditer(value)):
+            return f"[{kind.upper()}]"  # the last four could be an SSN's serial (Account: 12345-ddd-dd-dddd)
         digits = re.sub(r"\D", "", value)
         return f"[{kind.upper()}-last4:{digits[-4:]}]"
     return TAGS[kind]
@@ -436,6 +449,9 @@ def raw_spans(text, quiet=None, overlong=None, glued=None):
         k = ssn_kind(*m.groups())
         if k:
             out.append((m.start(1), m.end(3), k))
+            tail = _DASH_TAIL.match(text, m.end(3))  # dash-joined digits after it: a value the SSN cut short
+            if tail:
+                out.append((tail.start() + 1, tail.end(), "long-number"))
     cards = _card_spans(text, quiet, overlong)
     out.extend(cards)
     if glued is not None:  # the only SSNs _card_spans yields are glued ones
@@ -560,8 +576,10 @@ def find_spans(text):
             continue
         if k not in ("card", "long-number"):
             if (s, e, k) in glued or any(h in glued_taken for h in hits):
-                # A glued SSN cut by a higher span, or a span cutting into a glued SSN: hide what lies outside the
-                # spans already taken, tagged without digits, so neither the SSN's digits nor the span's own stay.
+                # A glued SSN cut by a higher span, or a span cutting into a glued SSN (an account value running into
+                # it): hide what lies outside the spans already taken, tagged without digits, so neither the SSN's
+                # digits nor the span's own stay. Other SSN hits keep the old rule (the overlapping span is
+                # dropped): splitting it there changed what redact's later passes found and showed more.
                 tag = "[SECRET]" if k in HOLD_KINDS else TAGS.get(k, f"[{k.upper()}]")
                 pos = s
                 for ts, te in hits + [(e, e)]:
