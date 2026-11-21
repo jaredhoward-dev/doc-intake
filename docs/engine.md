@@ -153,9 +153,11 @@ Read these before trusting it:
   4-digit groups they are hidden when they start with a card issuer prefix (an expiry-shaped neighbour goes with
   them), so IDs like `5100 0042 0017 0003 0001` or `4111-1111-1111-1112-0001` lose their first sixteen digits,
   while `2030-0042-0017-0003-0001` stays clean. An SSN-shaped `ddd-dd-dddd` group glued by a dash to a run that
-  holds a card, such a number or a plain number of 10+ digits is hidden as an SSN; a span it cuts into (an
-  account number or e-mail running into it) keeps only its part outside the SSN, tagged without digits
-  (`[ACCOUNT]`), so no tag shows an SSN digit. In other dash-joined IDs, after an expiry (`12/29-`)
+  holds a card, such a number or a plain number of 10+ digits is hidden as an SSN, and the rest of that run as a
+  number (a year after `dd/dd/` is left to its date); a span it cuts into (an account number or e-mail running
+  into it) keeps only its part outside the SSN, tagged without digits (`[ACCOUNT]`). Digits joined by a dash after
+  an SSN found by its label are hidden as a number too. An account or card tag whose value holds a valid
+  `ddd-dd-dddd` group shows no digits, so no tag shows an SSN's serial. In other dash-joined IDs, after an expiry (`12/29-`)
   or a date, after a double dash, a number under 10 digits or bare 4-digit groups it is left alone. A card tag shows the last four digits only
   when they are unambiguous: when overlapping Luhn-valid stretches in one run end at different groups, or a
   19-digit card's first sixteen are a card too, the tag is a plain `[CARD]`, since the last four could belong to a
