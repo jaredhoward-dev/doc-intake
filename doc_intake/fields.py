@@ -611,10 +611,13 @@ class Extraction:
         user marked this value wrong (a rejection), so a rule that takes its first find goes on to the next."""
         if (group, field) not in self.allowed:
             return  # allowlist: never a field the profile doesn't name
-        if ftype == "usage" and span:
+        text = dict(self.pages).get(page)
+        if ftype == "usage" and span and text is not None:
             # a column's slice can cut a reading out of a longer number ("...901 kWh"): match again on the page, where
-            # the type's edge rule sees what really comes before, and take the whole reading from there
-            m = _RX["usage"].match(dict(self.pages).get(page, ""), span[0])
+            # the type's edge rule sees what really comes before, and take the whole reading from there. An
+            # Extraction made without its pages (a host calling offer directly) can't look, and keeps the check every
+            # type gets: the value matched the type where it was found, and the detectors below still run.
+            m = _RX["usage"].match(text, span[0])
             if not m:
                 return
             value, span = m.group(0), (m.start(), m.end())
@@ -770,15 +773,19 @@ def extract(prof, pages, src, keep_span=False, rejected=()):
             _link_month(ex, f, pages, src)
         if f.get("from") == "top":
             for pno, text in pages[:1]:
-                for ln in text.split("\n")[:8]:
+                lines = text.split("\n")
+                for k, ln in enumerate(lines[:8]):
                     cells = _cells(ln)
                     s = trim_vendor(cells[0][2]) if cells else ""
                     if valid_value(f["type"], s) and not re.search(
                             r"receipt|invoice|welcome|thank|order|transaction|store\s*#|tel|phone|www\.|http|page"
                             r"|^(?:sub\s*-?\s*)?total\b|^amount\b|^balance\b|^tax\b|^date\b|^bill\s+to\b",
                             s, re.I):
+                        at = cells[0][2].find(s)  # the cell's own spot, so a rejection names this line's name only
+                        base = sum(len(x) + 1 for x in lines[:k]) + cells[0][0]
                         if ex.offer(f["group"], None, None, f["name"], f["type"], s.title() if s.isupper() else s,
-                                    pno, "top of page", src, rank=98) is not False:
+                                    pno, "top of page", src, (base + at, base + at + len(s)) if at >= 0 else None,
+                                    rank=98) is not False:
                             break  # else the user marked it wrong: the next line's first cell
     for f in fields:
         if f.get("name_date"):
@@ -811,8 +818,9 @@ def _link_month(ex, f, pages, src):
                 continue
             day = dt.date(y, mo, 1) if f["link_month"] == 0 else \
                 dt.date(y + mo // 12, mo % 12 + 1, 1) - dt.timedelta(days=1)
+            # the link's own spot, so a rejection names this link and not every link on the page
             if ex.offer(f["group"], None, None, f["name"], "date", day.isoformat(), pno, "month in a link", src,
-                        None, (), rank=50, order=0) is not False:
+                        m.span(), (), rank=50, order=0) is not False:
                 return
 
 

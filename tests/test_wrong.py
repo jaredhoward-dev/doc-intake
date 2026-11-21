@@ -477,3 +477,108 @@ def test_a_rejection_on_another_field_or_page_takes_nothing():
     assert _extract("receipt", TWO_TOTALS, [dict(rej, field="tax")])[0]["total"]["value"] == "$12.00"
     assert _extract("receipt", TWO_TOTALS, [dict(rej, page=2, span=None)])[0]["total"]["value"] == "$12.00"
     assert _extract("receipt", TWO_TOTALS, [rej])[0]["total"]["value"] == "$12.72"
+
+
+# ---------------------------------------------------------------- round 5 gaps: tables, the first-find rules, spots
+ITEMS = {"name": "t", "default_group": "totals", "groups": {"totals": {"global": True}, "items": {}},
+         "fields": [{"group": "totals", "name": "total_fee", "type": "money", "labels": ["total fee"]}],
+         "tables": [{"group": "items", "header_min": 2, "row_requires": ["code"],
+                     "columns": [{"name": "code", "type": "ref", "labels": ["code"]},
+                                 {"name": "fee", "type": "money", "labels": ["fee"]}]}]}
+LINE_ITEMS = """Estimate
+Code      Fee
+D0120     $60.00
+D0140     $60.00
+Total fee   $120.00
+"""
+
+
+def _table(rejected=()):
+    from doc_intake import fields as fx
+    fx.check_profile(ITEMS)
+    recs, _, _ = fx.extract(ITEMS, [(1, LINE_ITEMS)], "fake.txt", keep_span=True, rejected=rejected)
+    return {(r["row"], r["field"]): r for r in recs}
+
+
+def test_a_table_cell_marked_wrong_is_kept_out_of_its_row_only():
+    got = _table()
+    assert got[(1, "fee")]["value"] == got[(2, "fee")]["value"] == "$60.00"
+    rej = _rej(got[(1, "fee")])
+    assert rej["row"] == 1 and rej["label"] == "table: fee"
+    after = _table([rej])
+    assert (1, "fee") not in after and after[(1, "code")]["value"] == "D0120"  # the rest of the row stays
+    assert after[(2, "fee")]["value"] == "$60.00"  # the same value in another row is another value
+    # the same value in the same row and column, from another spot or label (a re-laid-out page), is the same value:
+    # the column's type comes from the table (tasks._ftype walks "tables"), so the value is read back and matched
+    pages = [(1, LINE_ITEMS)]
+    moved = {**got[(1, "fee")], "label": "local model", "span": None}
+    moved_far = dict(moved, value="$60.00")
+    assert tasks._is_rejected(moved_far, dict(rej, label="table: fee"), pages, ITEMS)
+    assert not tasks._is_rejected(dict(moved_far, row=2), rej, pages, ITEMS)
+    assert not tasks._is_rejected(dict(moved_far, value="$61.00"), dict(rej, span=[0, 0]), pages, ITEMS)
+    assert tasks._ftype(ITEMS, {"group": "items", "field": "fee"}) == "money"
+
+
+TWO_PERIODS = """Example Print Co
+Invoice
+Billing Period:   March 1 - March 31, 2030
+Total      $40.00
+Statement period: April 1 - April 30, 2030
+"""
+
+
+def test_a_rejected_range_goes_on_to_the_next_range():
+    got, _ = _extract("invoice", TWO_PERIODS)
+    assert got["period_start"]["value"] == "2030-03-01" and got["period_start"]["label"] == "billing period"
+    after, _ = _extract("invoice", TWO_PERIODS, [_rej(got["period_start"])])
+    assert after["period_start"]["value"] == "2030-04-01" and after["period_start"]["label"] == "statement period"
+    assert after["period_end"]["value"] == "2030-03-31"  # the other end of the first range is untouched
+    # with no other range, the field takes its next candidate by the usual rules, or is missing; never the rejected
+    one = TWO_PERIODS.replace("Statement period: April 1 - April 30, 2030\n", "")
+    got, _ = _extract("invoice", one)
+    after, _ = _extract("invoice", one, [_rej(got["period_start"])])
+    assert after.get("period_start", {}).get("value") != "2030-03-01"
+
+
+TWO_LINKS = """Example Cloud Co
+Invoice
+Your bill is ready: https://billing.example.test/view?year=2030&month=3
+Last month: https://billing.example.test/view?year=2030&month=2
+Total      $40.00
+"""
+
+
+def test_a_rejected_link_month_goes_on_to_the_next_link():
+    got, _ = _extract("invoice", TWO_LINKS)
+    start = got["period_start"]
+    assert (start["value"], start["label"]) == ("2030-03-01", "month in a link")
+    assert start["span"]  # the link's own spot, so a rejection names this link only
+    after, _ = _extract("invoice", TWO_LINKS, [_rej(start)])
+    assert after["period_start"]["value"] == "2030-02-01"
+    assert after["period_end"]["value"] == "2030-03-31"  # its own field: untouched
+
+
+TWO_NAMES = """Example Garden Shop
+Sample Plant Nursery
+Receipt
+Date: 01/09/2030
+Total      $5.00
+"""
+
+
+def test_a_rejected_top_of_page_name_goes_on_to_the_next_line():
+    got, _ = _extract("receipt", TWO_NAMES)
+    v = got["vendor"]
+    assert (v["value"], v["label"]) == ("Example Garden Shop", "top of page")  # no known sender on this page
+    assert v["span"] == [0, len("Example Garden Shop")]  # the cell's own spot
+    after, _ = _extract("receipt", TWO_NAMES, [_rej(v)])
+    assert (after["vendor"]["value"], after["vendor"]["label"]) == ("Sample Plant Nursery", "top of page")
+
+
+def test_value_spot():
+    from doc_intake import fields as fx
+    assert fx.value_spot("anything", (3, 7), "x") == [3, 7]  # a span comes back as a list
+    assert fx.value_spot("Paid to EXAMPLE CO today", None, "Example Co") == [8, 18]  # case-insensitive
+    assert fx.value_spot("Paid to Example Co", None, "Ex") is None  # under three characters: too common to place
+    assert fx.value_spot("Paid to Example Co", None, "Other Co") is None
+    assert fx.value_spot("Paid to Example Co", None, None) is None
