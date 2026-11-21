@@ -35,7 +35,7 @@ Workflow files carry comments explaining why a step has its shape. Read them, an
 
 ### 4. Reproduce locally, then verify the fix
 
-Run the command CI ran, narrowed to the failing area: `python3 -I -m unittest discover -s tests -p "test_<area>.py" -v`, with `TZ=America/New_York` if dates are involved. If CI's condition differs from this machine (no venv, no models), reproduce that condition rather than assuming. Confirm the failure reproduces before the fix and is gone after; report the command and its result. Don't run the full suite locally; CI does.
+Run the command CI ran, narrowed to the failing area: `python3 -I -m pytest -q tests/test_<area>.py`, with `TZ=America/New_York` if dates are involved. If CI's condition differs from this machine (no venv, no models), reproduce that condition rather than assuming. Confirm the failure reproduces before the fix and is gone after; report the command and its result. Don't run the full suite locally; CI does.
 
 For a workflow change, validate the YAML: `python3 -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" <workflow>`.
 
