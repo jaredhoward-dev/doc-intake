@@ -14,14 +14,16 @@ accounting logic to itself.
 
 ## Status
 
-Stage 1 of a split: the engine lives inside its first host, which is private, and runs only through that host's
-CLI. The interfaces below may still change before it is published on its own.
+Stage 2: the engine runs on its own through `python3 -m doc_intake` over a TOML config ([cli.md](cli.md)), or
+inside a host that calls `configure()`. It installs with pip (`pyproject.toml`), which adds a `doc-intake` command.
+The interfaces below may still change before the tagged `v0.1.0` release.
 
 ## What it does
 
 | Module | What |
 | --- | --- |
-| `config.py` | `configure()`: the records root, inbox, state folder, profiles, known-senders map, routing hook, model, private terms, and the few messages that name the host's setup |
+| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands; installed as the `doc-intake` command (`doc_intake.cli:main`) |
+| `config.py` | `configure()`: the records root, inbox, state folder, profiles, known-senders map, routing hook, model, private terms, `today` (the date document dates are judged against), and the few messages that name the host's setup |
 | `places.py` | The root, inbox and state folder; private writes (folders `0700`, files `0600`, atomic); the index of what was filed or held; the access log; sha256; moves that never overwrite |
 | `detect.py` | Sensitive-value detectors and redaction: counts per kind, never values. Checksums (Luhn, ABA, VIN) cut false positives |
 | `reader.py` | Type sniffing, `pdftotext`, OCR one page at a time, `.eml` bodies, barcodes; each file read in a forked child under a memory cap and a timeout |
@@ -68,7 +70,11 @@ every dot folder, so a staging folder such as `.inbox.staging/` beside the inbox
 
 ## Configuring a host
 
+Example profiles and a fake known-senders map are in `profiles/` (`receipt.json`, `invoice.json`,
+`senders.json`); [profiles.md](profiles.md) describes the profile format.
+
 ```python
+import datetime
 import engine
 from engine import scan
 
@@ -80,9 +86,22 @@ engine.configure(
     route=my_route,                            # where a screened document goes (see config.py)
     model=lambda: "",                          # a local model's name, or "" for none
     privacy_terms=lambda: [],                  # words a model-made title must never contain
+    today=datetime.date.today,                 # the date document dates are judged against (the default)
 )
 scan.cmd_scan(args)
 ```
+
+The known-senders map may sit in the profiles folder under any name: the file `senders_file` names is never listed
+as a profile, and `fields --task <its name>` is refused. A file named `vendors.json` there is skipped too, for a
+host that keeps the map under that name without configuring `senders_file`.
+
+`today` is a function returning the `datetime.date` that document dates are judged against: a date more than 60
+days after it is passed over for a document's date when there is another, and is flagged on the review page (a
+loan's maturity or a payment's due date may be up to ten years ahead), and `fields --labels` calls it far. It
+defaults to the real calendar; a test or a replay pins it (`today=lambda: datetime.date(2030, 2, 1)`) so the outcome
+doesn't drift as the real date nears the documents' dates. It never fakes when something happened: task files'
+`created` and `superseded_at`, the access log, the date in a task file's name, index dates and cleanup's ages stay
+on the real clock. Like the other hooks it is not type-checked: a non-callable fails when a date is first judged.
 
 `route(path, ftype, redacted_text, title_fn=None, **opts)` returns a dict with `category`, `profile`, `dest`,
 `name`, `note`, `date_from_file` and `name_from_model`. It sees only redacted text. Hosts register their own value
@@ -107,10 +126,17 @@ Read these before trusting it:
   engine: a determined local process can edit files or drive a terminal or GUI. Running the assistant as a
   separate user, with access only through a small allowlisted command, is the real boundary.
 - **Untrusted input:** every file is read in a child process capped at 1.5 GB of address space and 300 s, with OCR
-  at most 25 MP per page. A file past a cap is reported as unscreened, never passed as safe.
+  at most 25 MP per page. A file past a cap is reported as unscreened, never passed as safe. macOS does not let a
+  process lower its address-space limit, so there the child runs without the memory cap and keeps the timeout,
+  the OCR pixel cap and ImageMagick's own limits; a runaway read is stopped by the timeout or the OS, not at
+  1.5 GB. `scan` says so once a run ("N files read without a memory cap ..."), and `scan --profile-mem` shows
+  `mem_cap=yes` or `no` for each file it read. Peak memory (`--profile-mem`) is reported in MB on both platforms.
 
 ## Requirements
 
 Python 3 standard library. Optional system tools, each used only when present: `pdftotext`, `pdftoppm` and
-`pdfinfo` (poppler), `tesseract`, ImageMagick 7 (`magick`), and the `zxingcpp` Python module with Pillow for
-barcodes. Without one, a file it would have read is reported as unscreened or partly read.
+`pdfinfo` (poppler), `tesseract`, ImageMagick 7 (`magick`) or 6 (`convert` and `identify`, as Ubuntu 24.04
+ships it), and the `zxingcpp` Python module with Pillow for barcodes. Without one, a file it would have read is
+reported as unscreened or partly read. ImageMagick only converts, scales and crops images; PDF pages are rendered
+with `pdftoppm`, and only ImageMagick 7 is asked to render one when `pdftoppm` is missing, since distribution
+builds of 6 refuse PDF input in their `policy.xml` (the engine never changes that policy).

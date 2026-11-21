@@ -2,7 +2,7 @@ $ host.py fields --task tax_w2 inbox/w2-2030.txt
 rc=0
 --- stdout
 wrote .doc-intake/tasks/tax_w2-<TODAY>.json: 1 documents, 6 fields, 6 missing (0 required), 0 flagged in 0 documents, 1 complete, 0 dropped as sensitive (none); approved: no
-The user previews it in his own terminal: python3 tests/host.py preview "tax_w2-<TODAY>.json"
+The user previews it in their own terminal: python3 tests/host.py preview "tax_w2-<TODAY>.json"
 or as a page: python3 tests/host.py preview --html "tax_w2-<TODAY>.json"
-then, once he has looked: python3 tests/host.py approve "tax_w2-<TODAY>.json"
+then, once they have looked: python3 tests/host.py approve "tax_w2-<TODAY>.json"
 --- stderr

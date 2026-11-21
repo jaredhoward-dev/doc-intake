@@ -2,5 +2,5 @@ $ host.py extract inbox/paystub.txt --pages 1
 rc=0
 --- stdout
 wrote .doc-intake/extracts/9d269a76 - paystub p1.txt: redacted routing 1, account 1, employee-id 1; llm-check off; needs-review: no; approved: no
-The user looks at it in his own editor, then: python3 tests/host.py approve "9d269a76 - paystub p1.txt"
+The user looks at it in their own editor, then: python3 tests/host.py approve "9d269a76 - paystub p1.txt"
 --- stderr

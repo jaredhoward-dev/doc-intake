@@ -3,6 +3,8 @@
 The generic half of the document intake. It holds no folder layout, no vendor list and no bookkeeping: a host
 program configures it (config.configure) with its records root, inbox, profiles and routing hook, and keeps its
 own CLI. See docs/engine.md. Stdlib only, plus optional system tools (pdftotext, pdftoppm, tesseract,
-ImageMagick 7, zxing-cpp); it imports nothing outside this package.
+ImageMagick 7 or 6, zxing-cpp); it imports nothing outside this package.
 """
 from .config import CFG, configure  # noqa: F401
+
+__version__ = "0.1.0"  # mirrors pyproject.toml's version; tests/test_packaging.py checks they match

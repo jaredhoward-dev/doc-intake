@@ -3,6 +3,8 @@
 - Open an issue first for anything larger than a small fix.
 - Fixtures are synthetic. A pull request with a real document, path, name or value is closed.
 - `doc_intake/` stays stdlib-only and host-agnostic (see `CLAUDE.md`).
-- Tests: `python3 -I -m unittest discover -s tests -t . -v`, and a test that fails without your
+- Tests: `python3 -I -m pytest -q tests`, and a test that fails without your
   change.
+- A version bump changes both `pyproject.toml` and `doc_intake.__version__`; `tests/test_packaging.py`
+  checks they match.
 - Pull request titles follow Conventional Commits (`feat:`, `fix:`, `docs:`, ...).

@@ -6,7 +6,8 @@ configure() once at start-up with:
 - root: a function returning the records root (read on every call, so a test or a changed environment is seen);
 - inbox: a function returning the inbox folder's name under the root;
 - state: the state folder's name under the root (default ".doc-intake");
-- profiles_dir and senders_file: the folder of field profiles and the known-senders map (fields.py);
+- profiles_dir and senders_file: the folder of field profiles and the known-senders map (fields.py); the map may
+  sit in the profiles folder under any name, and is never listed or loaded as a profile;
 - route(path, ftype, redacted_text, title_fn=None, **opts): where a screened document would go, as a dict with
   category, profile, dest, name, note, date_from_file and name_from_model (see scan.screen);
 - model: a function returning the local model's name for the optional model pass, or "";
@@ -16,18 +17,30 @@ configure() once at start-up with:
   (goes-to text, file name, what approving does) for one; money_sections(plan) -> extra HTML; preview_intro(n) ->
   the page's "what approving does" line; preview_css_extra: style rules for the host's own sections;
 - vendor_key(name) -> the key pairs.py compares vendors by;
+- today: a function returning the datetime.date that document dates are judged against (default
+  datetime.date.today): a date over 60 days after it is not a plausible document date and is flagged on the review
+  page (fields.py), and `fields --labels` calls such a date far. A test or a replay pins it so the outcome doesn't
+  drift with the calendar. It judges document dates only and never fakes when something happened: task files'
+  `created` and `superseded_at`, the access log, the date in a task file's name, index dates and cleanup's ages
+  all stay on the real clock;
 - the wording of a few messages that name the host's own setup (where to set the model, what to do with held
   secret material, the command the user runs).
 
 Every hook has a default that works with no host: an "inbox" folder, no routing, no model, no extra preview text.
 Nothing here reads the environment or a file.
 """
+import datetime as dt
 import os
 
 
 def _no_route(path, ftype, redacted, title_fn=None, **opts):
     return {"category": "unknown", "profile": None, "dest": None, "name": os.path.basename(path), "note": "",
             "date_from_file": False, "name_from_model": False}
+
+
+def _real_today():
+    """datetime.date.today, looked up on each call (so a test that swaps datetime.date for a fixed one is seen)."""
+    return dt.date.today()
 
 
 class Config:
@@ -57,6 +70,7 @@ class Config:
                                         "nothing is filed or moved.")
         self.preview_css_extra = ""
         self.vendor_key = None
+        self.today = _real_today             # callable -> date that document dates are judged against
         self.model_hint = "configure a model or pass --model"   # how to set the local model
         self.start_hint = "start Ollama"     # how to start the local model server
 

@@ -1,9 +1,9 @@
 """Bounded memory in the engine: the per-file child limit, streaming reads, page-by-page OCR and --profile-mem.
 
 Through the fake host (tests/host.py) against a throwaway records root; every document here is made up. The
-bounded child relies on RLIMIT_AS, which only Linux lets a process lower, so the tests that assert the cap bites
-are skipped elsewhere (CI runs them on Ubuntu); the rest run the real fork with that one limit left out on macOS
-(macos_rlimit)."""
+bounded child's memory cap is RLIMIT_AS, which only Linux lets a process lower, so the tests that assert the cap
+bites are skipped elsewhere (CI runs them on Ubuntu); the rest run the real fork everywhere, and on macOS the
+engine itself runs the child without that one cap (reader.cap_address_space)."""
 import hashlib
 import json
 import os
@@ -23,7 +23,7 @@ SENTINEL = "zebrafinch quartzlamp"
 
 cap_bites = pytest.mark.skipif(not sys.platform.startswith("linux"),
                                reason="asserts the memory cap stops a read: RLIMIT_AS, which only Linux lets a "
-                                      "process lower (macOS raises ValueError)")
+                                      "process lower (macOS refuses it and runs uncapped)")
 
 
 def put(root, relp, data):
@@ -47,6 +47,93 @@ def hog(*_a, **_k):
 def test_run_bounded_returns_the_value():
     value, info = reader.run_bounded(lambda a, b: a + b, 2, 3, mem_mb=512, timeout=30)
     assert value == 5 and info["ok"] and info["reason"] is None and info["peak_rss_mb"] > 0
+
+
+def refuse_rlimit_as(monkeypatch, exc=ValueError):
+    """setrlimit as on macOS: RLIMIT_AS raises (ValueError by default), every other limit is real."""
+    real = reader.resource.setrlimit
+
+    def setrlimit(which, limits):
+        if which == reader.resource.RLIMIT_AS:
+            raise exc("current limit exceeds maximum limit")
+        return real(which, limits)
+    monkeypatch.setattr(reader.resource, "setrlimit", setrlimit)
+
+
+def test_cap_address_space_reports_a_refused_cap(monkeypatch):
+    refuse_rlimit_as(monkeypatch)
+    assert reader.cap_address_space(256 << 20) is False
+
+
+def test_cap_address_space_does_not_swallow_other_errors(monkeypatch):
+    refuse_rlimit_as(monkeypatch, exc=OSError)
+    with pytest.raises(OSError):
+        reader.cap_address_space(256 << 20)
+
+
+def test_run_bounded_reads_without_the_cap_where_refused(monkeypatch):
+    refuse_rlimit_as(monkeypatch)
+    value, info = reader.run_bounded(lambda a, b: a * b, 6, 7, mem_mb=256, timeout=30)
+    assert value == 42 and info["ok"] and info["reason"] is None
+    value, info = reader.run_bounded(time.sleep, 30, mem_mb=256, timeout=1)  # the timeout still holds
+    assert value is None and info["reason"] == "timeout"
+
+
+@pytest.mark.parametrize("applies", [True, False])
+def test_run_bounded_says_whether_the_cap_applied(monkeypatch, applies):
+    monkeypatch.setattr(reader, "cap_address_space", lambda nbytes: applies)
+    reader.reset_uncapped()
+    value, info = reader.run_bounded(lambda: 1, mem_mb=256, timeout=30)
+    assert value == 1 and info["capped"] is applies
+    _, info = reader.run_bounded(time.sleep, 30, mem_mb=256, timeout=1)  # known even when the read times out
+    assert info["reason"] == "timeout" and info["capped"] is applies
+    assert reader.uncapped_reads() == (0 if applies else 2)
+
+
+def test_run_bounded_child_dying_before_the_cap_byte_is_unknown_not_uncapped(monkeypatch):
+    monkeypatch.setattr(reader, "cap_address_space", lambda nbytes: os._exit(7))
+    reader.reset_uncapped()
+    value, info = reader.run_bounded(lambda: 1, mem_mb=256, timeout=30)
+    assert value is None and not info["ok"] and info["capped"] is None and info["reason"] == "failed"
+    assert reader.uncapped_reads() == 0
+
+
+def test_run_bounded_refused_cap_is_reported(monkeypatch):
+    refuse_rlimit_as(monkeypatch)
+    _, info = reader.run_bounded(lambda: 1, mem_mb=256, timeout=30)
+    assert info["capped"] is False
+
+
+UNCAPPED_LINE = "read without a memory cap (this platform refuses it); the timeout and pixel caps still applied."
+
+
+@pytest.mark.parametrize("applies", [True, False])
+def test_scan_says_once_when_reads_ran_uncapped(rec, monkeypatch, capsys, applies):
+    monkeypatch.setattr(reader, "cap_address_space", lambda nbytes: applies)
+    put(rec, "Archive/notes.txt", TEXT + " " + SENTINEL)
+    put(rec, "inbox/new notes.txt", TEXT + " other " + SENTINEL)
+    put(rec, "inbox/more notes.txt", TEXT + " more")
+    assert host.main(["scan", "--profile-mem"]) == 0
+    cap = capsys.readouterr()
+    reads = [x for x in cap.err.splitlines() if x.startswith("mem: ") and "notes.txt" in x]
+    assert len(reads) == 3 and all(f"mem_cap={'yes' if applies else 'no'}" in x for x in reads)
+    if applies:
+        assert UNCAPPED_LINE not in cap.out
+    else:
+        assert cap.out.count(UNCAPPED_LINE) == 1 and f"\n3 files {UNCAPPED_LINE}" in cap.out
+    assert "zebrafinch" not in cap.out + cap.err.replace("notes.txt", "")
+
+
+@pytest.mark.parametrize("platform, maxrss", [("darwin", 300 << 20), ("linux", 300 << 10)])
+def test_maxrss_is_converted_per_platform(monkeypatch, platform, maxrss):
+    monkeypatch.setattr(sys, "platform", platform)
+    assert reader.maxrss_mb(maxrss) == 300.0 == fingerprints._mb(maxrss)
+    assert reader.maxrss_mb(maxrss + maxrss // 600) == 300.5
+
+
+def test_run_bounded_peak_rss_is_plausible_megabytes():
+    _, info = reader.run_bounded(lambda: len(bytearray(64 << 20)), mem_mb=1024, timeout=30)
+    assert 64 <= info["peak_rss_mb"] < 1024
 
 
 @cap_bites
@@ -178,7 +265,7 @@ def test_streaming_fingerprint_matches_whole_text():
 
 # ---------------------------------------------------------------- page-by-page OCR (subprocess mocked)
 class FakeTools:
-    """Stands in for pdfinfo, pdftotext, pdftoppm, tesseract and magick; records each call."""
+    """Stands in for pdfinfo, pdftotext, pdftoppm, tesseract and ImageMagick (7 or 6); records each call."""
 
     def __init__(self, pages=9, size=(612, 792), image=(1000, 1000)):
         self.pages, self.size, self.image = pages, size, image
@@ -206,9 +293,9 @@ class FakeTools:
             self.rendered.append(img)
         elif tool == "tesseract":
             out = f"page from {os.path.basename(cmd[1])} " + TEXT
-        elif tool == "magick" and cmd[1] == "identify":
+        elif (tool == "magick" and cmd[1] == "identify") or tool == "identify":
             out = f"{self.image[0]} {self.image[1]}\n"
-        elif tool == "magick":
+        elif tool in ("magick", "convert"):
             open(cmd[-1], "wb").close()
 
         class R:
@@ -225,6 +312,42 @@ def tools(monkeypatch):
     monkeypatch.setattr(reader, "_run", t)
     monkeypatch.setattr(reader, "have", lambda name: True)
     return t
+
+
+@pytest.mark.parametrize("installed, convert, identify", [
+    ({"magick", "convert", "identify"}, ["magick"], ["magick", "identify"]),   # IM7 (with its legacy names)
+    ({"magick"}, ["magick"], ["magick", "identify"]),
+    ({"convert", "identify"}, ["convert"], ["identify"]),                      # IM6 (Ubuntu 24.04)
+    ({"convert"}, None, None),             # a lone convert: Windows' disk converter, not ImageMagick
+    (set(), None, None),
+])
+def test_magick_cmd_picks_im7_else_im6(monkeypatch, installed, convert, identify):
+    monkeypatch.setattr(reader, "have", lambda name: name in installed)
+    assert reader.magick_cmd() == reader.magick_cmd("convert") == convert
+    assert reader.magick_cmd("identify") == identify
+    with pytest.raises(ValueError):
+        reader.magick_cmd("mogrify")
+
+
+def test_large_image_is_downscaled_with_im6(rec, tools, monkeypatch, tmp_path):
+    monkeypatch.setattr(reader, "have", lambda name: name != "magick")
+    tools.image = (10000, 8000)
+    p = put(tmp_path, "photo.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 50)
+    reader.read_document(str(p), "jpeg", barcodes=False)
+    assert not tools.of("magick")
+    (ident,) = tools.of("identify")
+    (conv,) = tools.of("convert")
+    assert ident[1] == "-ping" and conv[conv.index("-resize") + 1] == f"{reader.MAX_OCR_PIXELS}@>"
+    assert conv[1:1 + len(reader.MAGICK_LIMITS)] == reader.MAGICK_LIMITS
+    assert tools.of("tesseract")[0][1] == conv[-1]
+
+
+def test_im6_never_reads_a_pdf(rec, tools, monkeypatch, tmp_path):
+    """Without pdftoppm, IM7 may render a page; IM6 is not asked (distribution policy.xml refuses PDF input)."""
+    monkeypatch.setattr(reader, "have", lambda name: name not in ("magick", "pdftoppm"))
+    p = put(tmp_path, "scan.pdf", b"%PDF-1.4\n")
+    doc = reader.read_document(str(p), "pdf", pages=[1], barcodes=False)
+    assert not tools.of("convert") and not tools.of("magick") and doc["incomplete"] == reader.OCR_FAILED
 
 
 def test_ocr_renders_one_page_at_a_time(rec, tools, tmp_path):
@@ -297,7 +420,7 @@ def test_profile_mem_logs_names_and_numbers_never_content(rec, capsys):
     lines = [x for x in cap.err.splitlines() if x.startswith("mem: ")]
     assert any("Archive/notes.txt" in x and "type=text" in x and "result=fingerprinted" in x
                and "peak_rss_mb=" in x for x in lines)
-    assert any("Media/clip.mp4" in x and "sha256 only" in x for x in lines)
+    assert any("Media/clip.mp4" in x and "sha256 only" in x and "mem_cap=-" in x for x in lines)
     assert any("inbox/new notes.txt" in x and "method=text" in x for x in lines)
     assert any(x.startswith("mem: total") for x in lines)
     names = cap.err.replace("new notes.txt", "").replace("notes.txt", "")

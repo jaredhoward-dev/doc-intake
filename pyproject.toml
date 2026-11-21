@@ -1,0 +1,39 @@
+# Packaging for hosts that pin doc-intake (pip install git+https://github.com/jaredhoward-dev/doc-intake@v0.1.0).
+# The version is static here and mirrored by doc_intake.__version__; tests/test_packaging.py keeps them equal.
+# No runtime dependencies: the engine is stdlib only. The example profiles and config (profiles/, examples/) are
+# not packaged; a host copies them from the repo (see docs/cli.md).
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doc-intake"
+version = "0.1.0"
+description = "Local-only document intake for working with an AI assistant without it seeing your documents."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX",
+    "Environment :: Console",
+]
+
+[project.optional-dependencies]
+# QR and barcode checks: the reader imports these only when both are installed.
+barcodes = ["zxing-cpp", "Pillow"]
+
+[project.scripts]
+doc-intake = "doc_intake.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/jaredhoward-dev/doc-intake"
+Source = "https://github.com/jaredhoward-dev/doc-intake"
+Issues = "https://github.com/jaredhoward-dev/doc-intake/issues"
+Changelog = "https://github.com/jaredhoward-dev/doc-intake/releases"
+
+[tool.setuptools]
+packages = ["doc_intake"]

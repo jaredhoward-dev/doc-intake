@@ -41,6 +41,7 @@ import os
 import re
 
 from . import detect
+from .config import CFG
 
 # Set by config.configure: the folder of profile JSON files, and the known-senders map (optional).
 PROFILE_DIR = None
@@ -127,13 +128,32 @@ class ProfileError(ValueError):
 
 
 # ---------------------------------------------------------------- profiles
-NOT_PROFILES = {"vendors"}  # a known-senders map kept beside the profiles is not a profile
+# A known-senders map may sit in the profiles folder; it is never a profile. The file senders_file names is skipped
+# whatever it is called (_is_senders_map). NOT_PROFILES stays as a fallback for a host that keeps the map beside its
+# profiles under the conventional name (the map's own top-level key, {"vendors": [...]}) without configuring
+# senders_file: such a file was never listed before, and listing it now would offer a non-profile as a task.
+NOT_PROFILES = {"vendors"}
+
+
+def _is_senders_map(path):
+    """True when path is the configured known-senders map (compared by real path, so a relative or linked
+    senders_file still matches)."""
+    if not VENDORS_FILE:
+        return False
+    try:
+        return os.path.realpath(path) == os.path.realpath(VENDORS_FILE)
+    except (OSError, ValueError):
+        return False
+
+
+def _not_a_profile(name):
+    return name in NOT_PROFILES or _is_senders_map(profile_path(name))
 
 
 def profile_names():
     if not PROFILE_DIR:
         return []
-    return sorted(n[:-5] for n in os.listdir(PROFILE_DIR) if n.endswith(".json") and n[:-5] not in NOT_PROFILES)
+    return sorted(n[:-5] for n in os.listdir(PROFILE_DIR) if n.endswith(".json") and not _not_a_profile(n[:-5]))
 
 
 def load_profile(name):
@@ -141,6 +161,8 @@ def load_profile(name):
         raise ProfileError(f"no profile named {name!r}")
     if not PROFILE_DIR:
         raise ProfileError("no profile folder is configured")
+    if _not_a_profile(name):
+        raise ProfileError(f"{name!r} is the known-senders map, not a profile; profiles: {', '.join(profile_names())}")
     p = profile_path(name)
     try:
         with open(p, encoding="utf-8") as f:
@@ -397,12 +419,13 @@ _RENEWAL = re.compile(r"(?i)\b(?:renew\w*|expir\w*|next\s+(?:bill\w*|payment|cha
 
 
 def plausible_document_date(iso, before=""):
-    """False for a renewal, expiry or next-bill date (by the words just before it) or one over 60 days ahead."""
+    """False for a renewal, expiry or next-bill date (by the words just before it) or one over 60 days after the
+    configured today (config.CFG.today)."""
     try:
         d = dt.date.fromisoformat(iso)
     except ValueError:
         return False
-    if d > dt.date.today() + dt.timedelta(days=60):
+    if d > CFG.today() + dt.timedelta(days=60):
         return False
     return not _NOT_DOC_DATE.search(before or "")
 
@@ -419,8 +442,9 @@ FUTURE_OK = {"maturity_date", "payment_due_date"}
 
 
 def suspicious(field, ftype, value, today=None):
-    """Why a value looks wrong (for the preview), or None. Checks shape only; the user decides."""
-    today = today or dt.date.today()
+    """Why a value looks wrong (for the preview), or None. Checks shape only; the user decides. Dates are judged
+    against today, by default the configured one (config.CFG.today)."""
+    today = today or CFG.today()
     v = value or ""
     if ftype == "org_name":
         if len(v) > 40:
