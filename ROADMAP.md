@@ -20,8 +20,9 @@
 
 ## Stage 3: better extraction
 
-- Side-by-side boxes on scanned forms (a Truth in Lending box: five figures in a row under their
-  headers) where OCR columns don't line up with the labels; today only the local model fills them.
+- Done: side-by-side boxes on scanned forms (a Truth in Lending box: five figures in a row under
+  their headers) with the opt-in `box_row` key ([docs/profiles.md](docs/profiles.md)); still to be
+  confirmed on real scans.
 - More detectors and profiles, each with fake fixtures.
 - A review-page option to mark a value wrong, which re-runs fields for that document.
 
