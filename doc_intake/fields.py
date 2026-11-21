@@ -127,13 +127,32 @@ class ProfileError(ValueError):
 
 
 # ---------------------------------------------------------------- profiles
-NOT_PROFILES = {"vendors"}  # a known-senders map kept beside the profiles is not a profile
+# A known-senders map may sit in the profiles folder; it is never a profile. The file senders_file names is skipped
+# whatever it is called (_is_senders_map). NOT_PROFILES stays as a fallback for a host that keeps the map beside its
+# profiles under the conventional name (the map's own top-level key, {"vendors": [...]}) without configuring
+# senders_file: such a file was never listed before, and listing it now would offer a non-profile as a task.
+NOT_PROFILES = {"vendors"}
+
+
+def _is_senders_map(path):
+    """True when path is the configured known-senders map (compared by real path, so a relative or linked
+    senders_file still matches)."""
+    if not VENDORS_FILE:
+        return False
+    try:
+        return os.path.realpath(path) == os.path.realpath(VENDORS_FILE)
+    except (OSError, ValueError):
+        return False
+
+
+def _not_a_profile(name):
+    return name in NOT_PROFILES or _is_senders_map(profile_path(name))
 
 
 def profile_names():
     if not PROFILE_DIR:
         return []
-    return sorted(n[:-5] for n in os.listdir(PROFILE_DIR) if n.endswith(".json") and n[:-5] not in NOT_PROFILES)
+    return sorted(n[:-5] for n in os.listdir(PROFILE_DIR) if n.endswith(".json") and not _not_a_profile(n[:-5]))
 
 
 def load_profile(name):
@@ -141,6 +160,8 @@ def load_profile(name):
         raise ProfileError(f"no profile named {name!r}")
     if not PROFILE_DIR:
         raise ProfileError("no profile folder is configured")
+    if _not_a_profile(name):
+        raise ProfileError(f"{name!r} is the known-senders map, not a profile; profiles: {', '.join(profile_names())}")
     p = profile_path(name)
     try:
         with open(p, encoding="utf-8") as f:

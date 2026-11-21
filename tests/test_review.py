@@ -62,10 +62,35 @@ def ext(profile, text):
 
 
 # ---------------------------------------------------------------- vendors, trimming, invoice numbers, dates
-@pytest.mark.xfail(strict=True, reason="engine bug: fields.NOT_PROFILES hard-codes 'vendors', so a configured "
-                   "senders_file under another name beside the profiles is listed as a profile")
 def test_senders_json_is_not_a_profile():
     assert "senders" not in fx.profile_names()
+    assert "invoice" in fx.profile_names()
+
+
+def test_senders_map_refused_as_a_profile(rec, capsys):
+    drop(rec, "a.txt", CLOUD_TEXT)
+    with pytest.raises(fx.ProfileError, match="known-senders map, not a profile"):
+        fx.load_profile("senders")
+    assert run(["fields", "--task", "senders", f"{IN}/a.txt"]) == 2
+    err = capsys.readouterr().err
+    assert "known-senders map, not a profile" in err and "invoice" in err
+    tasks = rec / ".doc-intake" / "tasks"
+    assert not tasks.exists() or not list(tasks.iterdir())
+
+
+def test_senders_map_under_any_name_is_not_a_profile(tmp_path, monkeypatch):
+    """A map with a third name (neither vendors.json nor senders.json) is skipped because senders_file names it."""
+    (tmp_path / "invoice.json").write_text(open(f"{host.PROFILES}/invoice.json", encoding="utf-8").read())
+    (tmp_path / "known_billers.json").write_text(json.dumps({"vendors": [{"name": "Example Cloud"}]}))
+    monkeypatch.setattr(fx, "PROFILE_DIR", str(tmp_path))
+    monkeypatch.setattr(fx, "VENDORS_FILE", str(tmp_path / "known_billers.json"))
+    assert fx.profile_names() == ["invoice"]
+    with pytest.raises(fx.ProfileError, match="not a profile"):
+        fx.load_profile("known_billers")
+    monkeypatch.setattr(fx, "VENDORS_FILE", None)  # no map configured: the file is just another JSON file
+    assert fx.profile_names() == ["invoice", "known_billers"]
+    (tmp_path / "vendors.json").write_text(json.dumps({"vendors": []}))  # the fallback name, never listed
+    assert fx.profile_names() == ["invoice", "known_billers"]
 
 
 def test_senders_map_order():
