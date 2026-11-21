@@ -132,7 +132,9 @@ on the real clock. Like the other hooks it is not type-checked: a non-callable f
 
 `route(path, ftype, redacted_text, title_fn=None, **opts)` returns a dict with `category`, `profile`, `dest`,
 `name`, `note`, `date_from_file` and `name_from_model`. It sees only redacted text. Hosts register their own value
-types for their own profiles with `fields.register_type()`.
+types for their own profiles with `fields.register_type()`. A registered type gets the same whole-line check as the
+built-in ones (a figure cut out of a longer number is no value; [profiles.md](profiles.md)), unless it is one of
+the free-text types.
 
 The review page takes hooks for receipts and invoices: `summary_extras(values)` adds keys to a document's summary,
 `money_card(summary)` says where the document goes and what approving does, `money_sections(plan)` adds sections,

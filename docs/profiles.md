@@ -86,7 +86,8 @@ slice of one (the column below a label, or left of a `column_before` header): wh
 longer number, so that a digit, or a comma, dot, dash or slash
 and a digit, is glued to the figure's first or last digit (`...5678.00` out of `12345678.00`), it is no value and the
 field takes its next candidate or is missing. A minus before an amount (`-5.00`), a `$` start and a dash between two
-dates are not cuts. Free-text types are taken as whole cells and skip this check.
+dates are not cuts, but a slash or dot still is, so a `year` field never takes `2030` out of `12/31/2030`. Free-text
+types (`org_name`, `short_text`, `plan_name`) are taken as whole cells and skip this check.
 
 ### Labels with an index
 
@@ -148,7 +149,8 @@ numbers, ZIP codes and IDs stay out. A `usage` figure has at most six digits (ni
 leading zero, and is never the tail of a longer number (a digit, comma, dot, dash, slash or `#` just before it, or a
 group of digits a space before it), checked against the page itself, so an account or meter number printed beside a
 unit word is never a reading. Like every type's, a `usage` value is still checked against the detectors. `fields.py` lists the rest (`cost`, `limit`, `duration`, `policy_type`, ...).
-A host adds its own types with `fields.register_type(name, pattern)` before loading a profile that uses them.
+A host adds its own types with `fields.register_type(name, pattern)` before loading a profile that uses them. They get
+the same whole-line check as the built-in types (see "How a value is found").
 
 ## Groups
 
