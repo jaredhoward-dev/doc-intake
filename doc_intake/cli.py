@@ -31,7 +31,7 @@ from .places import DocError, clean_part, log_access, rel, state_dir
 from .reader import EXT
 from .scan import NO_PROFILE
 from .tasks import (_task_files, cmd_approve, cmd_cleanup, cmd_extract, cmd_fields, cmd_keep, cmd_read,
-                    cmd_status)
+                    cmd_status, cmd_wrong)
 
 # The command as the user typed it, for help (argparse's prog) and the hints the engine prints (configure(cli=)).
 # main() defaults to the installed console script, which setuptools calls as main() with no arguments;
@@ -373,7 +373,7 @@ def cmd_doctor(args, prog=SCRIPT, out=print):
 
 COMMANDS = {"scan": cmd_scan, "fields": cmd_fields, "preview": preview.cmd_preview, "approve": cmd_approve,
             "read": cmd_read, "keep": cmd_keep, "cleanup": cmd_cleanup, "extract": cmd_extract, "status": cmd_status,
-            "pairs": cmd_pairs}
+            "pairs": cmd_pairs, "wrong": cmd_wrong}
 
 
 def parser(prog=SCRIPT):
@@ -407,6 +407,13 @@ def parser(prog=SCRIPT):
     s.add_argument("--terminal-confirm", action="store_true")
     s = sub.add_parser("keep", help="keep a task file or extract past cleanup")
     s.add_argument("target", metavar="TASK_JSON|EXTRACT")
+    s = sub.add_parser("wrong", help="the user marks one value wrong and fields re-runs that document (own terminal)")
+    s.add_argument("target", metavar="TASK_JSON")
+    s.add_argument("--doc", type=int, required=True, metavar="N", help="the card's number on the review page")
+    s.add_argument("--field", required=True, metavar="[GROUP.]FIELD")
+    s.add_argument("--plan")
+    s.add_argument("--row", type=int)
+    s.add_argument("--reason")
     s = sub.add_parser("read", help="read an approved task file or extract, with a reason (logged)")
     s.add_argument("target", metavar="TASK_JSON|EXTRACT")
     s.add_argument("--reason", required=True)

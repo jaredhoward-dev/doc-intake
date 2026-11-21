@@ -244,6 +244,29 @@ def test_end_to_end(e2e, monkeypatch, capsys):
     assert mode(task) == 0o600 and mode(root / ".doc-intake" / "access.log") == 0o600
 
 
+def test_wrong_through_the_cli(e2e, monkeypatch, capsys):
+    """wrong is wired into the CLI: refused outside the user's terminal; from it, the document is read again and the
+    result is a task that is not approved, whatever the old one was."""
+    p, root = e2e
+    c = ["--config", str(p)]
+    assert cli.main(c + ["fields", "--task", "receipt", "inbox/shop.txt"]) == 0
+    task = sorted((root / ".doc-intake" / "tasks").iterdir())[-1]
+    assert approve(c + ["approve", task.name], monkeypatch) == 0
+    capsys.readouterr()
+
+    assert cli.main(c + ["wrong", task.name, "--doc", "1", "--field", "total"]) == 2
+    got = capsys.readouterr()
+    assert "own terminal" in got.err and "12.34" not in got.out + got.err   # refused, and shows nothing
+    with monkeypatch.context() as m:   # the user's terminal: like fields there, it shows the user the new values
+        m.setattr(places, "is_tty", lambda: True)
+        assert cli.main(c + ["wrong", task.name, "--doc", "1", "--field", "total", "--reason", "test"]) == 0
+    assert "marked wrong: receipt.total in document 1" in capsys.readouterr().out
+    assert cli.main(c + ["read", task.name, "--reason", "test"]) == 2   # the approved task was superseded
+    newest = task.parent / json.loads(task.read_text())["superseded_by"]
+    assert newest != task and not json.loads(newest.read_text()).get("approved")
+    assert cli.main(c + ["read", newest.name, "--reason", "test"]) == 2   # not approved: preview and approve again
+
+
 def test_read_still_needs_a_reason(e2e, capsys):
     p, _ = e2e
     with pytest.raises(SystemExit):
