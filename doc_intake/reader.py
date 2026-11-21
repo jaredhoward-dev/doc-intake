@@ -244,7 +244,11 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         os.close(rfd)
         try:
             # A timeout, or tools the child left behind. After _reap_by the group id stays reserved while any of
-            # them is alive (POSIX doesn't reuse it), so this reaches only them; with none left it's a no-op.
+            # them is alive (POSIX doesn't reuse it), so then this reaches only them. With none left the id is free:
+            # in the moment between the reap and this call the kernel could in theory hand it to a new process
+            # that leads a group of its own, and this would signal that group. Pids are handed out in sequence,
+            # so that needs a full wrap of the pid space within that moment. ESRCH (nothing left) and EPERM (a
+            # group that isn't ours) are both ignored.
             os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass

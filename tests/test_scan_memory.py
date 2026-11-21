@@ -7,6 +7,7 @@ engine itself runs the child without that one cap (reader.cap_address_space)."""
 import hashlib
 import json
 import os
+import shutil
 import sys
 import time
 
@@ -176,6 +177,8 @@ def gone(pid):
     return not r.stdout.strip() or r.stdout.strip().startswith("Z")
 
 
+@pytest.mark.skipif(not (shutil.which("ps") and shutil.which("sleep")),
+                    reason="needs ps and sleep on PATH to start a leftover tool and check it was killed")
 def test_run_bounded_still_kills_tools_the_child_left_behind():
     import subprocess
 
