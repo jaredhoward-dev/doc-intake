@@ -554,6 +554,26 @@ def _cells(text, base=0):
 
 
 # ---------------------------------------------------------------- the engine
+def cut_from_longer(text, s, e, ftype=None):
+    """True when text[s:e], read on its whole page, is the head or tail of a longer number: the value-below rule and
+    "column_before" read a slice of a line, and a slice's edge can fall inside an account or meter number
+    ("...5678.00" out of "12345678.00"). Head: a digit just before a figure that starts with a digit, or a digit
+    then a comma, dot, dash or slash. Tail: a digit just after a figure that ends with a digit, or a comma, dot, dash
+    or slash then a digit. A dash between dates is a range ("01/01/2030-01/14/2030"), never a cut, so dates skip
+    it; a lone minus before an amount ("-5.00") has no digit before it, so it is no cut either. A "$" start is a
+    figure's own start."""
+    glue = ",./" if ftype == "date" else ",.-/"
+    if s < e and text[s].isdigit() and s > 0:
+        a = text[s - 1]
+        if a.isdigit() or (a in glue and s > 1 and text[s - 2].isdigit()):
+            return True
+    if s < e and text[e - 1].isdigit() and e < len(text):
+        b = text[e]
+        if b.isdigit() or (b in glue and e + 1 < len(text) and text[e + 1].isdigit()):
+            return True
+    return False
+
+
 def value_spot(text, span, value):
     """Where a value sits in its page's text: its span, else the first case-insensitive occurrence of a value of three
     or more characters (a known sender's name, a top-of-page cell), else None."""
@@ -627,6 +647,8 @@ class Extraction:
                 self.dropped_at.add((page, s, e))
                 self.dropped[k] = self.dropped.get(k, 0) + 1
             return
+        if span and text is not None and ftype not in WHOLE and cut_from_longer(text, span[0], span[1], ftype):
+            return  # a column's slice cut this figure out of a longer number: never a value; the next candidate wins
         value = normalize(ftype, value)
         if not value or (field in VALIDATORS and not VALIDATORS[field](value)):
             return

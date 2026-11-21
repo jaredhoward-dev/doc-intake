@@ -81,6 +81,13 @@ all matches a document, the engine takes nothing from it: the document doesn't f
 Every value is then checked against the sensitive-value detectors. A value that overlaps a detected card,
 account or ID number, or that looks like one when read with its label, is dropped and counted, never kept.
 
+Every value with a spot on the page is also checked against its whole line, which matters where a rule reads only a
+slice of one (the column below a label, or left of a `column_before` header): when the slice's edge fell inside a
+longer number, so that a digit, or a comma, dot, dash or slash
+and a digit, is glued to the figure's first or last digit (`...5678.00` out of `12345678.00`), it is no value and the
+field takes its next candidate or is missing. A minus before an amount (`-5.00`), a `$` start and a dash between two
+dates are not cuts. Free-text types are taken as whole cells and skip this check.
+
 ### Labels with an index
 
 A label can be a pair `[text, index]` instead of a plain string:
