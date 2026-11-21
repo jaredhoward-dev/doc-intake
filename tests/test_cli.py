@@ -3,10 +3,12 @@ run through cli.main on a throwaway root. Fake data only; conftest's fresh_confi
 each test, and its no_real_dialog stands in for the desktop click."""
 import json
 import os
+import stat
 
 import pytest
+from helpers import ACCOUNT, CARD, FAKES, SSN
 
-from doc_intake import CFG, cli, places, reader
+from doc_intake import CFG, cli, llm, places, reader
 from doc_intake.cli import ConfigError
 from doc_intake.scan import NO_PROFILE
 
@@ -238,6 +240,8 @@ def test_end_to_end(e2e, monkeypatch, capsys):
     assert got["task"] == "receipt" and any(v["value"] == "$12.34" or "12.34" in v["value"] for v in got["values"])
     log = (root / ".doc-intake" / "access.log").read_text()
     assert "\tread\t" in log and "reason=test" in log
+    assert mode(root / ".doc-intake" / "tasks") == 0o700
+    assert mode(task) == 0o600 and mode(root / ".doc-intake" / "access.log") == 0o600
 
 
 def test_read_still_needs_a_reason(e2e, capsys):
@@ -278,3 +282,141 @@ def test_example_config_is_valid():
     assert [r["category"] for r in rules] == ["invoice", "receipt"]
     if os.path.isfile(os.path.join(REPO, "profiles", "receipt.json")):
         assert cli.load_config(path)["profiles_dir"] == os.path.join(REPO, "profiles")
+
+
+# ---------------------------------------------------------------- round gate follow-ups
+def mode(p):
+    return stat.S_IMODE(os.stat(p).st_mode)
+
+
+def make_task(c, root, name, text, profile):
+    """A fake document dropped in the inbox and its fields pulled through the CLI; the new task file's name."""
+    (root / "inbox" / name).write_text(text)
+    d = root / ".doc-intake" / "tasks"
+    before = set(d.glob("*.json")) if d.exists() else set()
+    assert cli.main(c + ["fields", "--task", profile, f"inbox/{name}"]) == 0
+    (t,) = set(d.glob("*.json")) - before
+    return t.name
+
+
+PAIR_RECEIPT = """SAMPLE SOFTWARE
+Receipt
+01/09/2030
+Monthly plan     9.00
+Tax              0.54
+TOTAL            $9.54
+Thank you
+"""
+PAIR_INVOICE = """SAMPLE SOFTWARE
+Invoice
+Invoice number EX-1001
+Invoice date 01/08/2030
+Monthly plan     9.00
+Tax              0.54
+Amount due       $9.54
+"""
+
+
+def test_pairs_through_the_cli(e2e, monkeypatch, capsys):
+    p, root = e2e
+    c = ["--config", str(p)]
+    inv = make_task(c, root, "invoice.txt", PAIR_INVOICE, "invoice")
+    rcp = make_task(c, root, "receipt.txt", PAIR_RECEIPT, "receipt")
+    other = make_task(c, root, "other.txt", PAIR_RECEIPT.replace("SAMPLE SOFTWARE", "OTHER SHOP CO")
+                      .replace("01/09/2030", "05/20/2030"), "receipt")
+    for t in (inv, rcp, other):
+        assert approve(c + ["approve", t], monkeypatch) == 0
+    capsys.readouterr()
+
+    assert cli.main(c + ["pairs"]) == 0
+    o = capsys.readouterr().out
+    assert "pair agree: Sample Software; invoice 2030-01-08 9.54 = receipt 2030-01-09 9.54" in o
+    assert "unmatched receipt:" in o and "other.txt" in o
+    assert "1 pair(s), 0 mismatch(es), 1 unmatched" in o
+    assert not [f for f in FAKES if f in o] and "EX-1001" not in o
+
+    assert cli.main(c + ["pairs", inv]) == 0          # a TASK_JSON keeps only what it is part of
+    o = capsys.readouterr().out
+    assert "pair agree" in o and "other.txt" not in o and "1 pair(s), 0 mismatch(es), 0 unmatched" in o
+    assert cli.main(c + ["pairs", other]) == 0
+    o = capsys.readouterr().out
+    assert "pair agree" not in o and "other.txt" in o and "0 pair(s), 0 mismatch(es), 1 unmatched" in o
+
+    bad_inv = make_task(c, root, "inv2.txt", PAIR_INVOICE.replace("SAMPLE SOFTWARE", "MISMATCH VENDOR CO")
+                        .replace("EX-1001", "EX-2002").replace("2030", "2031"), "invoice")
+    bad_rcp = make_task(c, root, "rcp2.txt", PAIR_RECEIPT.replace("SAMPLE SOFTWARE", "MISMATCH VENDOR CO")
+                        .replace("$9.54", "$9.45").replace("2030", "2031"), "receipt")
+    for t in (bad_inv, bad_rcp):
+        assert approve(c + ["approve", t], monkeypatch) == 0
+    capsys.readouterr()
+    assert cli.main(c + ["pairs"]) == 1
+    o = capsys.readouterr().out
+    assert "pair MISMATCH: Mismatch Vendor Co" in o and "2 pair(s), 1 mismatch(es), 1 unmatched" in o
+    assert cli.main(c + ["pairs", inv]) == 0          # the mismatch is filtered out
+    capsys.readouterr()
+    log = (root / ".doc-intake" / "access.log").read_text()
+    assert "\tpairs\t" in log and "reason=pair agreement" in log
+
+
+def test_sensitive_document_through_the_cli(e2e, capsys):
+    p, root = e2e
+    c = ["--config", str(p)]
+    (root / "inbox" / "shop.txt").write_text(RECEIPT + f"\nSSN {SSN}\nPaid with card {CARD}\nAccount number {ACCOUNT}\n")
+    assert cli.main(c + ["scan"]) == 0
+    o = capsys.readouterr()
+    out = o.out + o.err
+    assert "shop.txt" in out and "ssn" in out.lower() and "card" in out.lower()
+    task = make_task(c, root, "shop2.txt", (root / "inbox" / "shop.txt").read_text(), "receipt")
+    assert cli.main(c + ["status", "--detail"]) == 0
+    o2 = capsys.readouterr()
+    out += o2.out + o2.err
+    assert task in out
+    assert not [f for f in FAKES if f in out]
+    assert not [f for f in FAKES if f in (root / ".doc-intake" / "tasks" / task).read_text()]
+
+
+def test_make_route_model_title_and_file_date(tmp_path):
+    rules = cli.load_config(str(base_config(tmp_path, RULES)))["route"]
+    route = cli.make_route(rules)
+    f = tmp_path / "scan 001.txt"
+    f.write_text("x")
+    os.utime(f, (0, 1893456000))                      # 2030-01-01 UTC (2029-12-31 west of UTC)
+    calls = []
+
+    def title_fn(red):
+        calls.append(red)
+        return "Some Title"
+    r = route(str(f), "text", "nothing to see here", title_fn=title_fn)
+    assert r["name"] == "Some Title.txt" and r["name_from_model"] is True and r["category"] == "unknown"
+    assert route(str(f), "text", "nothing", title_fn=lambda red: None)["name"] == "scan 001.txt"
+    calls.clear()
+    r = route(str(f), "text", "Receipt\nTotal $5.00\n", title_fn=title_fn)
+    assert calls == [] and r["name_from_model"] is False and r["category"] == "receipt"
+    # no date in the text: dated from the file's mtime
+    import datetime as dt
+    day = dt.date.fromtimestamp(1893456000).isoformat()
+    assert r["date_from_file"] is True and r["name"] == f"{day} - Shop receipt.txt"
+    assert r["dest"] == f"Spending/{day[:4]}"
+
+
+def test_privacy_terms_file_removed_after_load(tmp_path, monkeypatch, capsys):
+    terms = tmp_path / "terms.txt"
+    terms.write_text("Example Secret Word\n")
+    p = base_config(tmp_path, 'privacy_terms_file = "terms.txt"\n')
+    root = tmp_path / "Records"
+    (root / "inbox").mkdir(mode=0o700)
+    (root / "inbox" / "note.txt").write_text("Some plain words with no rule to match\n")
+    real = cli.load_config
+
+    def load_then_remove(path):
+        s = real(path)
+        terms.unlink()
+        return s
+    monkeypatch.setattr(cli, "load_config", load_then_remove)
+    monkeypatch.setattr(reader, "_zxing", lambda: None)
+    monkeypatch.setattr(llm, "reachable", lambda: True)
+    monkeypatch.setattr(llm, "suggest_title", lambda red, model: ("Plain Note Title", "ok"))
+    assert cli.main(["--config", str(p), "scan", "--llm-names", "--model", "fake"]) == 2
+    o = capsys.readouterr()
+    assert "privacy_terms_file cannot be read" in o.err and "Traceback" not in o.err
+    assert "secret word" not in (o.out + o.err).lower()
