@@ -149,6 +149,7 @@ def cmd_labels(prof, args, out=print):
     """Debug: per file and page, which profile labels and known senders matched, with line and column. Never a
     value, never the line's text: only whether a value of the field's type follows on the line or below."""
     fields = fx._compile(prof)
+    uncapped = Uncapped()
     for name in args.files:
         p = resolve_record(name)
         doc = reader.read_bounded_or_fail(p)
@@ -196,6 +197,8 @@ def cmd_labels(prof, args, out=print):
                                 + ("" if below is None else f"; below: {'yes' if below else 'no'}")
                                 + ("" if col is None else f"; in its column: {col}")
                                 + ("; date range after: yes" if rng else "") + ")")
+        uncapped.file_done()
+    uncapped.note(out)
     return 0
 
 

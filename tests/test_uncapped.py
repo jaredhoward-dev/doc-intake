@@ -7,15 +7,15 @@ import pytest
 
 import host
 from doc_intake import reader
-from helpers import drop, rec, run  # noqa: F401  (rec is a fixture)
+from helpers import CARD, FAKES, SSN, drop, rec, run  # noqa: F401  (rec is a fixture)
 
 NOTE = "read without a memory cap (this platform refuses it); the timeout and pixel caps still applied."
 SENTINEL = "zebrafinch"
 
 
 def receipts(root):
-    drop(root, "a.txt", f"Example Shop\n2030-03-01\nTOTAL $12.34\n{SENTINEL}\n")
-    drop(root, "b.txt", f"Sample Market\n2030-03-02\nTOTAL $5.00\n{SENTINEL}\n")
+    drop(root, "a.txt", f"Example Shop\n2030-03-01\nSSN {SSN}\nTOTAL $12.34\n{SENTINEL}\n")
+    drop(root, "b.txt", f"Sample Market\n2030-03-02\nCard {CARD}\nTOTAL $5.00\n{SENTINEL}\n")
     return ["inbox/a.txt", "inbox/b.txt"]
 
 
@@ -29,6 +29,11 @@ def said(out, n):
     return out.count(NOTE) == 1 and f"\n{n} {noun} {NOTE}" in out
 
 
+def clean(out):
+    """Counts only: no fake value from the documents, and not the sentinel."""
+    return SENTINEL not in out and not any(v in out for v in FAKES)
+
+
 def task_name(root):
     (t,) = (root / host.STATE / "tasks").iterdir()
     return t.name
@@ -40,7 +45,16 @@ def test_fields_says_once(rec, monkeypatch, capsys, applies):
     assert run(["fields", "--task", "receipt"] + receipts(rec)) == 0
     out = capsys.readouterr().out
     assert (NOTE not in out) if applies else said(out, 2)
-    assert SENTINEL not in out
+    assert clean(out)
+
+
+@pytest.mark.parametrize("applies", [True, False])
+def test_fields_labels_says_once(rec, monkeypatch, capsys, applies):
+    cap(monkeypatch, applies)
+    assert run(["fields", "--task", "receipt", "--labels"] + receipts(rec)) == 0
+    out = capsys.readouterr().out
+    assert (NOTE not in out) if applies else said(out, 2)
+    assert clean(out)
 
 
 @pytest.mark.parametrize("applies", [True, False])
@@ -49,7 +63,7 @@ def test_extract_says_once(rec, monkeypatch, capsys, applies):
     assert run(["extract", "--pages", "1"] + receipts(rec)) == 0
     out = capsys.readouterr().out
     assert (NOTE not in out) if applies else said(out, 2)
-    assert SENTINEL not in out
+    assert clean(out)
 
 
 @pytest.mark.parametrize("applies", [True, False])
@@ -61,7 +75,7 @@ def test_preview_html_says_once(rec, monkeypatch, capsys, applies):
     assert run(["preview", "--html", "--no-open", task_name(rec)]) == 0
     out = capsys.readouterr().out
     assert (NOTE not in out) if applies else said(out, 2)
-    assert SENTINEL not in out
+    assert clean(out)
 
 
 def test_each_command_starts_from_zero(rec, monkeypatch, capsys):
