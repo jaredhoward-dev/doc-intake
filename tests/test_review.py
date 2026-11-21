@@ -1,14 +1,17 @@
 """The review page, approval status, superseded task files and the invoice/receipt field fixes (fake data only)."""
 import datetime as dt
 import json
+import pathlib
 
 import host
 import pytest
 from helpers import CARD, ROUTING, SSN, drop, mode, run
 
-from doc_intake import detect, places, preview, reader
+from doc_intake import detect, places, preview, reader, taskfiles
 from doc_intake import fields as fx
+from doc_intake.config import CFG
 from doc_intake.dates import document_date
+from doc_intake.places import DocError
 from doc_intake.tasks import approved_task_for
 
 IN = host.INBOX
@@ -80,33 +83,33 @@ def test_senders_map_refused_as_a_profile(rec, capsys):
 
 def test_senders_map_under_any_name_is_not_a_profile(tmp_path, monkeypatch):
     """A map with a third name (neither vendors.json nor senders.json) is skipped because senders_file names it."""
-    (tmp_path / "invoice.json").write_text(open(f"{host.PROFILES}/invoice.json", encoding="utf-8").read())
+    (tmp_path / "invoice.json").write_text(pathlib.Path(host.PROFILES, "invoice.json").read_text(encoding="utf-8"))
     (tmp_path / "known_billers.json").write_text(json.dumps({"vendors": [{"name": "Example Cloud"}]}))
-    monkeypatch.setattr(fx, "PROFILE_DIR", str(tmp_path))
-    monkeypatch.setattr(fx, "VENDORS_FILE", str(tmp_path / "known_billers.json"))
+    monkeypatch.setattr(CFG, "profiles_dir", str(tmp_path))
+    monkeypatch.setattr(CFG, "senders_file", str(tmp_path / "known_billers.json"))
     assert fx.profile_names() == ["invoice"]
     with pytest.raises(fx.ProfileError, match="not a profile"):
         fx.load_profile("known_billers")
     monkeypatch.chdir(tmp_path)  # a relative senders_file names the same file
-    monkeypatch.setattr(fx, "VENDORS_FILE", "known_billers.json")
+    monkeypatch.setattr(CFG, "senders_file", "known_billers.json")
     assert fx.profile_names() == ["invoice"]
     with pytest.raises(fx.ProfileError, match="not a profile"):
         fx.load_profile("known_billers")
     elsewhere = tmp_path.parent / (tmp_path.name + "-maps")
     elsewhere.mkdir()
     (elsewhere / "link.json").symlink_to(tmp_path / "known_billers.json")  # senders_file is a link to it
-    monkeypatch.setattr(fx, "VENDORS_FILE", str(elsewhere / "link.json"))
+    monkeypatch.setattr(CFG, "senders_file", str(elsewhere / "link.json"))
     assert fx.profile_names() == ["invoice"]
     with pytest.raises(fx.ProfileError, match="not a profile"):
         fx.load_profile("known_billers")
     (elsewhere / "real.json").write_text(json.dumps({"vendors": []}))  # the profiles folder holds a link to it
     (tmp_path / "linked_map.json").symlink_to(elsewhere / "real.json")
-    monkeypatch.setattr(fx, "VENDORS_FILE", str(elsewhere / "real.json"))
+    monkeypatch.setattr(CFG, "senders_file", str(elsewhere / "real.json"))
     assert fx.profile_names() == ["invoice", "known_billers"]
     with pytest.raises(fx.ProfileError, match="not a profile"):
         fx.load_profile("linked_map")
     (tmp_path / "linked_map.json").unlink()
-    monkeypatch.setattr(fx, "VENDORS_FILE", None)  # no map configured: the file is just another JSON file
+    monkeypatch.setattr(CFG, "senders_file", None)  # no map configured: the file is just another JSON file
     assert fx.profile_names() == ["invoice", "known_billers"]
     (tmp_path / "vendors.json").write_text(json.dumps({"vendors": []}))  # the fallback name, never listed
     assert fx.profile_names() == ["invoice", "known_billers"]
@@ -568,3 +571,23 @@ def test_file_name_date_only_when_the_text_has_none():
                                     ("12.50", "12.50")])
 def test_money_keeps_rate_decimals(s, want):
     assert fx._typed("money", s)[0][2] == want
+
+
+def test_labels_output_hides_an_unknown_header_word(rec, monkeypatch, capsys):
+    """A page that starts like a mail header block: a detector hit under a "Word:" line that isn't a standard header
+    shows as "in mail header other", never the word (it could be a name) and never the value."""
+    page = ("From: shop@example.com\nFakename: 4111111111111111\nSubject: Invoice INV-1\n\n"
+            "Invoice number INV-1\nAmount due $5.00\n")
+    drop(rec, "mail.txt", "placeholder\n")
+    monkeypatch.setattr(reader, "read_bounded_or_fail",
+                        lambda p, *a, **kw: {"pages": [(1, page)], "total": 1, "method": "text", "codes": []})
+    assert run(["fields", "--task", "invoice", "--labels", "inbox/mail.txt"]) == 0
+    out, err = capsys.readouterr()
+    assert "detector card" in out and "in mail header other" in out
+    assert "Fakename" not in out + err and "4111111111111111" not in out + err
+
+
+def test_resolve_output_refuses_a_file_outside_the_state_folder(rec):
+    (rec / "loose.json").write_text("{}")
+    with pytest.raises(DocError, match="no task file or extract"):
+        taskfiles.resolve_output(str(rec / "loose.json"))

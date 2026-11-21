@@ -7,9 +7,9 @@ import datetime as dt
 
 import pytest
 
-from doc_intake import pairs, reader
+from doc_intake import pairs
 from doc_intake.config import CFG
-from helpers import drop, rec, run  # noqa: F401  (rec is a fixture)
+from helpers import drop, run
 
 RECEIPT = """SAMPLE SOFTWARE
 Receipt

@@ -19,9 +19,9 @@ on your own desktop; only then can the assistant read them, and every read is lo
 
 ## Status
 
-Stage 2: the engine has moved here from its first host, a private records tool, and now runs on
-its own through a minimal CLI over a config file. It installs with pip (`pyproject.toml`); the
-first tagged release, `v0.1.0`, is still to come. See
+Stage 2 is done: the engine has moved here from its first host, a private records tool, and runs on
+its own through a minimal CLI over a config file. It installs with pip (`pyproject.toml`), and hosts
+pin a tag (`v0.1.0` is the first). Stage 3, better extraction, is under way. See
 [ROADMAP.md](ROADMAP.md) and [docs/HANDOFF.md](docs/HANDOFF.md). The module guide is
 [docs/engine.md](docs/engine.md).
 
@@ -32,7 +32,7 @@ it, which adds a `doc-intake` command:
 
     pip install .                      # from a checkout
     pip install '.[barcodes]'          # plus zxing-cpp and Pillow, for QR and barcode checks
-    pip install git+https://github.com/jaredhoward-dev/doc-intake@v0.1.0   # a pinned tag, once tagged
+    pip install git+https://github.com/jaredhoward-dev/doc-intake@v0.1.0   # a pinned tag
 
 The example config and profiles are not part of the installed package: copy
 [examples/doc-intake.toml](examples/doc-intake.toml) and [profiles/](profiles/) from the repo. Set

@@ -497,3 +497,16 @@ def test_privacy_terms_file_removed_after_load(tmp_path, monkeypatch, capsys):
     o = capsys.readouterr()
     assert "privacy_terms_file cannot be read" in o.err and "Traceback" not in o.err
     assert "secret word" not in (o.out + o.err).lower()
+
+
+def test_labels_names_only_known_mail_headers():
+    """fields --labels says which mail header a detector hit sits in, but a "Word:" line that isn't a known header
+    is document text (a name before a colon), so it shows as "other", never the word."""
+    lines = ["From: shop@example.com", "Fakename: 4111111111111111", "Message-ID: <x@example.com>", "",
+             "Body: text"]
+    assert tasks.mail_header_of(lines, 0) == "From"
+    assert tasks.mail_header_of(lines, 1) == "other"
+    assert tasks.mail_header_of(lines, 2) == "Message-ID"
+    assert tasks.mail_header_of(lines, 4) is None  # past the blank line: body, not headers
+    assert tasks.mail_header_of(["FROM: shop@example.com"], 0) == "FROM"  # matched without regard to case
+

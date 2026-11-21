@@ -14,6 +14,7 @@ import re
 import pytest
 
 from doc_intake import detect, fields as fx
+from doc_intake.config import CFG
 from helpers import CARD, ROUTING, SSN
 
 # ---------------------------------------------------------------- closing_disclosure
@@ -182,7 +183,7 @@ VEHICLE_PROFILES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fix
 @pytest.fixture
 def vehicle(vehicle_types, monkeypatch):
     """The vehicle types, and the engine pointed at the folder holding vehicle_purchase (restored after)."""
-    monkeypatch.setattr(fx, "PROFILE_DIR", VEHICLE_PROFILES)
+    monkeypatch.setattr(CFG, "profiles_dir", VEHICLE_PROFILES)
 
 
 def make_vin(stem):
@@ -684,3 +685,12 @@ def test_generic_lender_statement_breakdown():
     }
     out = json.dumps(recs)
     assert VIN not in out and CONTRACT_NO not in out
+
+
+def test_configure_profiles_dir_reaches_fields(tmp_path):
+    """fields reads the profiles folder from the config each time, so a later configure() takes effect."""
+    from doc_intake import configure
+    (tmp_path / "only_one.json").write_text(json.dumps({"fields": [{"name": "total", "type": "money",
+                                                                   "labels": ["total"]}]}))
+    configure(profiles_dir=str(tmp_path))  # fresh_config (conftest) puts the host's back afterwards
+    assert fx.profile_names() == ["only_one"]

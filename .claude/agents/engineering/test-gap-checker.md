@@ -41,6 +41,7 @@ Tests run under pytest (some are `unittest.TestCase` classes, which pytest also 
 | `doc_intake/approval.py` | `tests/test_approval.py` |
 | `doc_intake/tasks.py` (fields, approve, status, read, keep, cleanup, extract) | `tests/test_fields_read_llm.py`, `tests/test_review.py`, `tests/test_golden.py` |
 | `doc_intake/preview.py` | `tests/test_review.py`, `tests/test_snapshots.py` |
+| `doc_intake/taskfiles.py` | `tests/test_review.py`, `tests/test_cli.py`, `tests/test_golden.py` |
 | `doc_intake/locate.py`, `snapshots.py` | `tests/test_snapshots.py` |
 | `doc_intake/pairs.py` | `tests/test_pairs.py` |
 | `doc_intake/config.py`, `places.py`, `__init__.py` | `tests/test_smoke.py`, `tests/test_host.py`, plus the area test for the behaviour changed; `config.today` in `tests/test_today.py` |

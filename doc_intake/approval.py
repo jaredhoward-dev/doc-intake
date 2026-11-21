@@ -16,6 +16,7 @@ printed to and read from /dev/tty. That fallback is weaker: a process that drive
 The dialog is a strong speed bump, not a sandbox: a determined local process can still drive a GUI (xdotool,
 ydotool, a nested X server). The hook blocks those tools; it cannot see a program written to a file and run later.
 """
+import contextlib
 import datetime as dt
 import hashlib
 import json
@@ -170,8 +171,9 @@ def phrase(n=4):
     return " ".join(secrets.choice(WORDS) for _ in range(n))
 
 
+@contextlib.contextmanager
 def tty_io():
-    """(write, readline) on the controlling terminal; ApprovalError when there is none."""
+    """(write, readline) on the controlling terminal, closed on exit; ApprovalError when there is none."""
     try:
         f = open("/dev/tty", "r+", encoding="utf-8")
     except OSError as e:
@@ -181,16 +183,17 @@ def tty_io():
         f.write(s)
         f.flush()
 
-    return write, f.readline
+    with f:
+        yield write, f.readline
 
 
 def ask_terminal(text, io=None):
     """The user types back a random phrase on /dev/tty. True only on an exact match."""
-    write, readline = (io or tty_io)()
     want = phrase()
-    write(text + "\n\nWEAKER FALLBACK: a program that drives a pseudo-terminal can read this phrase.\n"
-          f"To approve, type: {want}\n> ")
-    got = " ".join((readline() or "").split()).lower()
+    with (io or tty_io)() as (write, readline):
+        write(text + "\n\nWEAKER FALLBACK: a program that drives a pseudo-terminal can read this phrase.\n"
+              f"To approve, type: {want}\n> ")
+        got = " ".join((readline() or "").split()).lower()
     return secrets.compare_digest(got, want)
 
 

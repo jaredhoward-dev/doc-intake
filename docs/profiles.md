@@ -229,4 +229,6 @@ registers a type with `fields.register_type` and adds the field in its own copy.
   duplicate field.
 - Try it on fake text: `fields.extract(profile, [(1, text)], "fake.txt")` returns the records, the dropped counts
   and any plans. `tests/test_example_profiles.py` does this for every example.
-- On a real document, `fields --task NAME --labels FILE` shows which labels matched where, never a value.
+- On a real document, `fields --task NAME --labels FILE` shows which labels matched where, never a value. A
+  detector hit inside an email header names the header only when it is a standard one (`From`, `Received`, ...);
+  any other name shows as `other`.

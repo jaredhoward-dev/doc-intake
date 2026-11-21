@@ -12,7 +12,7 @@ import os
 import re
 import sys
 
-import doc_intake
+from doc_intake import configure as engine_configure
 from doc_intake import fields as fx, pairs, preview, scan
 from doc_intake.dates import document_date
 from doc_intake.places import DocError, clean_part, log_access, rel, state_dir
@@ -91,7 +91,7 @@ def configure():
     from doc_intake.config import CFG, Config
     for k, v in vars(Config()).items():
         setattr(CFG, k, v)
-    doc_intake.configure(
+    engine_configure(
         root=root, inbox=lambda: INBOX, state=STATE, profiles_dir=PROFILES, senders_file=SENDERS, route=route,
         model=lambda: os.environ.get("DOC_INTAKE_MODEL", ""), privacy_terms=privacy_terms, cli=CLI,
         root_name="DOC_INTAKE_TEST_ROOT", assistant="the assistant")

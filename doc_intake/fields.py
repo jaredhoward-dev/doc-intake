@@ -1,6 +1,6 @@
 """Profile-driven field extraction: pull only an allowlisted set of fields out of a document's text.
 
-A profile (<name>.json in PROFILE_DIR, set by config.configure) names its fields, the label synonyms that introduce
+A profile (<name>.json in the profiles folder config.configure names) names its fields, the label synonyms that introduce
 each one, and the value type each value must match. Nothing outside a profile's fields is ever returned, and every value is checked
 against the sensitive detectors (detect.py) before it is kept: a value that overlaps a detected span, or that a
 detector flags when read with its label, is dropped and counted by kind.
@@ -53,9 +53,6 @@ import re
 from . import detect
 from .config import CFG
 
-# Set by config.configure: the folder of profile JSON files, and the known-senders map (optional).
-PROFILE_DIR = None
-VENDORS_FILE = None
 
 # Cents, or up to four decimals for rates such as prepaid interest per day ("$54.5548 per day").
 MONEY = r"(?:\$\s?\d{1,3}(?:,\d{3})+(?:\.\d{2,4})?|\$\s?\d+(?:\.\d{2,4})?|\d{1,3}(?:,\d{3})+\.\d{2,4}|\d+\.\d{2,4})"
@@ -148,10 +145,10 @@ NOT_PROFILES = {"vendors"}
 def _is_senders_map(path):
     """True when path is the configured known-senders map (compared by real path, so a relative or linked
     senders_file still matches)."""
-    if not VENDORS_FILE:
+    if not CFG.senders_file:
         return False
     try:
-        return os.path.realpath(path) == os.path.realpath(VENDORS_FILE)
+        return os.path.realpath(path) == os.path.realpath(CFG.senders_file)
     except (OSError, ValueError):
         return False
 
@@ -161,15 +158,15 @@ def _not_a_profile(name):
 
 
 def profile_names():
-    if not PROFILE_DIR:
+    if not CFG.profiles_dir:
         return []
-    return sorted(n[:-5] for n in os.listdir(PROFILE_DIR) if n.endswith(".json") and not _not_a_profile(n[:-5]))
+    return sorted(n[:-5] for n in os.listdir(CFG.profiles_dir) if n.endswith(".json") and not _not_a_profile(n[:-5]))
 
 
 def load_profile(name):
     if not re.fullmatch(r"[a-z0-9_]+", name or ""):
         raise ProfileError(f"no profile named {name!r}")
-    if not PROFILE_DIR:
+    if not CFG.profiles_dir:
         raise ProfileError("no profile folder is configured")
     if _not_a_profile(name):
         raise ProfileError(f"{name!r} is the known-senders map, not a profile; profiles: {', '.join(profile_names())}")
@@ -184,7 +181,7 @@ def load_profile(name):
 
 
 def profile_path(name):
-    return os.path.join(PROFILE_DIR, name + ".json")
+    return os.path.join(CFG.profiles_dir, name + ".json")
 
 
 def check_profile(prof):
@@ -329,8 +326,8 @@ def load_vendors():
     """The known-senders map, compiled: (vendors, stripe markers, bill-to pattern, (event markers, heading)).
     With no map configured, nothing is known."""
     spec = {"vendors": []}
-    if VENDORS_FILE:
-        with open(VENDORS_FILE, encoding="utf-8") as f:
+    if CFG.senders_file:
+        with open(CFG.senders_file, encoding="utf-8") as f:
             spec = json.load(f)
     out = []
     for v in spec["vendors"]:
@@ -347,9 +344,9 @@ def load_vendors():
 def sender_entry(name):
     """The known-senders map's entry for a vendor name (case-insensitive), else {}: a host may keep its own keys
     there."""
-    if not VENDORS_FILE or not name:
+    if not CFG.senders_file or not name:
         return {}
-    with open(VENDORS_FILE, encoding="utf-8") as f:
+    with open(CFG.senders_file, encoding="utf-8") as f:
         for v in json.load(f)["vendors"]:
             if v["name"].casefold() == name.casefold():
                 return v
@@ -357,7 +354,7 @@ def sender_entry(name):
 
 
 def known_vendor(pages, kind=None):
-    """(clean name, page, how) for a sender in the known-senders map (VENDORS_FILE), matched by domain or header
+    """(clean name, page, how) for a sender in the known-senders map (CFG.senders_file), matched by domain or header
     pattern; else a Stripe-hosted invoice's "from" business name (the cell before "Bill to"), trimmed; else None. kind limits the
     map to entries of that kind ("dealer"); a "capture" entry's name is its pattern's first group, trimmed."""
     vendors, stripe, bill_to, (ev_markers, ev_heading) = load_vendors()

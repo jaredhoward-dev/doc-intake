@@ -16,7 +16,7 @@ import host
 from doc_intake import detect, fingerprints, places, reader, tasks
 from doc_intake.config import CFG
 from doc_intake.places import DocError
-from helpers import ACCOUNT, CARD, CARD_SPACED, EIN, FAKES, MBI, ROUTING, SSN, drop, inbox, mode, rec, run  # noqa: F401
+from helpers import ACCOUNT, CARD, CARD_SPACED, EIN, FAKES, MBI, ROUTING, SSN, drop, inbox, mode, run
 
 INBOX = host.INBOX
 STATE = host.STATE
@@ -364,7 +364,7 @@ def test_scan_holds_credentials(rec, capsys):
 
 
 def test_scan_holds_2fa_qr(rec, monkeypatch, capsys):
-    monkeypatch.setattr(reader, "_zxing", lambda: object())
+    monkeypatch.setattr(reader, "_zxing", object)  # any non-None module stand-in
     monkeypatch.setattr(reader, "read_barcodes", lambda imgs: [("QRCode", "otpauth://totp/x?secret=ABC")])
     monkeypatch.setattr(reader, "ocr", lambda img, notes: "scan this code")
     p = inbox(rec) / "qr.png"
@@ -434,7 +434,8 @@ def test_cache_does_not_rehash_unchanged_files(rec, monkeypatch):
     fingerprints.records_hashes()
     assert len(calls) == 3
     calls.clear()
-    assert fingerprints.records_hashes(out=lambda s: calls.append("msg: " + s))
+    hashes = fingerprints.records_hashes(out=lambda s: calls.append("msg: " + s))
+    assert hashes
     assert calls == []
     changed = existing(rec, "Tax/2030/form 1.txt", "form 1, corrected\n")
     os.utime(changed, ns=(1, 1))
@@ -494,7 +495,7 @@ def make_pdf(path, lines):
     content = "BT /F1 9 Tf 11 TL 20 760 Td " + " ".join(f"({esc(ln)}) Tj T*" for ln in lines) + " ET"
     objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
-            "/Resources << /Font << /F1 5 0 R >> >> >>",
+            + "/Resources << /Font << /F1 5 0 R >> >> >>",
             f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
             "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>"]
     out, offs = b"%PDF-1.4\n", []

@@ -15,7 +15,7 @@ import pytest
 
 import host
 from doc_intake import fingerprints, places, reader, similar
-from helpers import rec  # noqa: F401  (a fixture)
+
 
 WORDS = ("garden shed inventory rake hoe trowel shovel bucket hose nozzle gloves twine stakes netting compost "
          "mulch seeds labels pots trays").split()
@@ -41,7 +41,6 @@ def cache(root):
 def hog(*_a, **_k):
     """A fake extractor that allocates far past the child's limit."""
     return bytearray(2 << 30)
-
 
 
 # ---------------------------------------------------------------- the bounded child
@@ -224,6 +223,16 @@ def test_run_bounded_reports_only_the_exception_type():
         raise ValueError("secret page text")
     value, info = reader.run_bounded(boom, mem_mb=256, timeout=30)
     assert value is None and info["reason"] == "ValueError"
+
+
+def _unpicklable():
+    return lambda: None  # a result the child cannot pickle back to the parent
+
+
+def test_run_bounded_result_that_cannot_be_sent_back_is_a_failure():
+    """The child exits 3 when pickling its result fails: no value, not ok, and no hang."""
+    value, info = reader.run_bounded(_unpicklable, mem_mb=256, timeout=30)
+    assert value is None and not info["ok"]
 
 
 @cap_bites

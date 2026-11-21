@@ -66,7 +66,7 @@ Medicare                             29.00        29.00
 Net Pay                           1,372.00     1,372.00
 Direct deposit  Routing 111111118  Account 12345678901   1,372.00
 """
-SECRET = "Example site login\nUsername: someone@example.com\nPassword: hunter22\n"
+LOGIN_NOTE = "Example site login\nUsername: someone@example.com\nPassword: hunter22\n"
 UTILITY = """EXAMPLE WATER UTILITY
 Statement date 01/20/2030
 Service address on file
@@ -107,7 +107,7 @@ FILES = {
     "inbox/invoice-print.txt": INVOICE_PRINT,
     "inbox/w2-2030.txt": W2,
     "inbox/paystub.txt": PAYSTUB,
-    "inbox/logins.txt": SECRET,
+    "inbox/logins.txt": LOGIN_NOTE,
     "inbox/water-copy.txt": UTILITY,
     "inbox/water-rescan.txt": UTILITY_RESCAN,
     "inbox/list.txt": NOTES,

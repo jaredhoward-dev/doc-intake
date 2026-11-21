@@ -14,9 +14,10 @@ accounting logic to itself.
 
 ## Status
 
-Stage 2: the engine runs on its own through `python3 -m doc_intake` over a TOML config ([cli.md](cli.md)), or
-inside a host that calls `configure()`. It installs with pip (`pyproject.toml`), which adds a `doc-intake` command.
-The interfaces below may still change before the tagged `v0.1.0` release.
+Stage 2 is done: the engine runs on its own through `python3 -m doc_intake` over a TOML config ([cli.md](cli.md)),
+or inside a host that calls `configure()`. It installs with pip (`pyproject.toml`), which adds a `doc-intake`
+command. Hosts pin a tag; the interfaces below can change between tags, so read the commits since your
+pin before moving it.
 
 ## What it does
 
@@ -35,6 +36,7 @@ The interfaces below may still change before the tagged `v0.1.0` release.
 | `dates.py` | The date a document is about (payment, statement or issue date before any other), for its file name |
 | `locate.py`, `snapshots.py` | Where each value sits on its page (text-layer or OCR word boxes) and a crop of that spot with every detector region blacked out |
 | `tasks.py` | Task files: `fields`, `approve`, `wrong`, `status`, `read`, `keep`, `cleanup` and redacted `extract`s of named pages |
+| `taskfiles.py` | Finding, loading and counting a task file in the state folder; shared by `tasks.py` and `preview.py` |
 | `approval.py` | The approval: a sha256 seal over the approved content, and the user's confirmation in a desktop dialog (or a typed-back phrase on `/dev/tty`) |
 | `preview.py` | The user's preview of a task file: in a terminal, or a self-contained review page (inline CSS and images, no scripts, nothing fetched) with a redacted crop of each value's spot on its page |
 | `pairs.py` | Invoice and receipt pairs for one charge, matched by a shared number or the same vendor within 3 days, and whether their totals agree |
@@ -150,6 +152,9 @@ Read these before trusting it:
   dotted Luhn-failing runs under 15 digits. Names
   are not detected at all. Other layouts, other countries' formats and numbers broken up by OCR errors slip
   through.
+- **`fields --labels` prints label words and header names from an allowlist only.** It names the words before
+  a detector hit only when they are common label words (`?` otherwise), and the mail header a hit sits in only
+  when it is a standard one (`From`, `Received`, ...); any other `Word:` line shows as `other`.
 - **The local-model pass is best-effort and nondeterministic.** It only adds flags or fills fields that are then
   validated; the detectors stay the primary layer.
 - **The approval gate is a speed bump, not a sandbox,** when the assistant runs as the same OS user as the

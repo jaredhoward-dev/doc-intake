@@ -14,7 +14,7 @@ import shutil
 import subprocess
 from collections import Counter
 
-from . import detect, fields as fx, places, tasks
+from . import detect, fields as fx, places, taskfiles
 from .config import CFG
 from .locate import build_snapshots
 from .places import DocError, rel, root, state_dir, write_private
@@ -37,7 +37,7 @@ def preview_table(task, out=print):
     required = [f["name"] for f in prof.get("fields", []) if f.get("required")]
     sources = task.get("sources") or [{"file": v["file"]} for v in task["values"]]
     for n, src in enumerate(sources, 1):
-        recs = tasks.typed_records(prof, [v for v in task["values"] if v.get("file") == src["file"]])
+        recs = taskfiles.typed_records(prof, [v for v in task["values"] if v.get("file") == src["file"]])
         fl = fx.document_flags(recs)
         out(f"[{n}/{len(sources)}] {src['file']}")
         rows = [(_field_name(r), r["value"], f"p.{r['page']} {r['label']}", ("  << " + fl[i]) if i in fl else "")
@@ -50,7 +50,7 @@ def preview_table(task, out=print):
             out(f"    MISSING (required): {', '.join(miss)}")
             if "total" in miss and task["task"] in ("receipt", "invoice"):
                 out(f"    {NO_AMOUNT}")
-    c = tasks.task_summary(task, prof)
+    c = taskfiles.task_summary(task, prof)
     out(f"{c['documents']} documents, {c['complete']} with every required field, {c['flagged_documents']} flagged")
     if task["missing"]:
         out(f"missing: {', '.join(task['missing'])}")
@@ -134,7 +134,7 @@ CHECK = {"vendor": "who billed you?", "date": "invoice or payment date, not a du
 
 
 def _amount(v):
-    return tasks._amount(v)
+    return taskfiles._amount(v)
 
 
 def _doc_summary(recs):
@@ -162,7 +162,7 @@ def other_documents(task_name, kind):
         if not n.endswith(".json") or n == task_name:
             continue
         try:
-            t = tasks._load_task(os.path.join(d, n))
+            t = taskfiles._load_task(os.path.join(d, n))
         except (OSError, ValueError):
             continue
         if t.get("task") != want or t.get("superseded_by"):
@@ -179,7 +179,7 @@ def card_plan(task, prof, others=(), name=None):
     required = [f["name"] for f in prof.get("fields", []) if f.get("required")]
     seen, plan = set(), []
     for src in task.get("sources", []):
-        recs = tasks.typed_records(prof, [v for v in task["values"] if v.get("file") == src["file"]])
+        recs = taskfiles.typed_records(prof, [v for v in task["values"] if v.get("file") == src["file"]])
         fl = fx.document_flags(recs)
         miss = [f for f in required if f not in {r["field"] for r in recs}]
         sm = _doc_summary(recs)
@@ -243,7 +243,7 @@ def preview_html(task, name, prof=None, snaps=None, others=()):
         prof = prof or fx.load_profile(task["task"])
     except fx.ProfileError:
         prof = {"fields": [], "groups": {}}
-    c = tasks.task_summary(task, prof)
+    c = taskfiles.task_summary(task, prof)
     state = "superseded by " + task["superseded_by"] if task.get("superseded_by") else (
         "approved" if task.get("approved") is True else "not approved")
     index = {id(v): i for i, v in enumerate(task["values"])}
@@ -349,17 +349,17 @@ def cmd_preview(args, out=print):
     if not getattr(args, "html", False) and not places.is_tty():
         raise DocError(f"preview is for the user's own terminal; {CFG.assistant} reads only approved task files, "
                        "with read (preview --html writes a page only the user opens)")
-    p, kind = tasks.resolve_output(args.target)
+    p, kind = taskfiles.resolve_output(args.target)
     if kind != "task":
         raise DocError("preview shows task files; open an extract in your own editor")
-    t = tasks._load_task(p)
+    t = taskfiles._load_task(p)
     if getattr(args, "html", False):
         hp = preview_path(p)
         uncapped = Uncapped()
         snaps = build_snapshots(t)
         write_private(hp, preview_html(t, os.path.basename(p), snaps=snaps,
                                        others=other_documents(os.path.basename(p), t["task"])))
-        c = tasks.task_summary(t)
+        c = taskfiles.task_summary(t)
         plan = card_plan(t, fx.load_profile(t["task"]), other_documents(os.path.basename(p), t["task"]),
                          os.path.basename(p))
         opened = sum(1 for x in plan if x[4])

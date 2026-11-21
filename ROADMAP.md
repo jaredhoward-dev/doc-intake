@@ -5,7 +5,7 @@
 - The engine modules as the `doc_intake` package, unchanged apart from the package name.
 - CI on synthetic data, the import allowlist, and a forbidden-terms check a host feeds its own list.
 
-## Stage 2: usable on its own
+## Stage 2: usable on its own (done)
 
 - Done: port the engine's tests from the first host, against a small fake host (`tests/host.py`: a
   temporary records root, inbox and state folder, and example profiles under `tests/fixtures/`).
@@ -16,7 +16,7 @@
   See [docs/cli.md](docs/cli.md).
 - Done: `pyproject.toml` (stdlib only, a `doc-intake` console script, a `barcodes` extra for zxing-cpp
   and Pillow). Hosts install from a checkout or a git tag.
-- A tagged release (`v0.1.0`) that hosts pin.
+- Done: a tagged release (`v0.1.0`, at 2f4a08a) that hosts pin.
 
 ## Stage 3: better extraction
 

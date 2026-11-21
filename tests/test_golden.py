@@ -18,11 +18,8 @@ import os
 import re
 import shutil
 
-import pytest
-
-import doc_intake
-from doc_intake import reader
-from helpers import rec, run  # noqa: F401  (rec is a fixture)
+from doc_intake import configure
+from helpers import run
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(HERE, "fixtures", "golden", "records")
@@ -32,7 +29,6 @@ STAMP = dt.datetime(2030, 1, 1, 12, 0, 0).timestamp()  # every fixture file's mt
 # 2029 puts the fixture's January dates within 60 days and its February and March dates past that: the run pins
 # both a plausible date and a flagged one. File names and timestamps stay on the real clock (<TODAY>, <NOW>).
 TODAY = dt.date(2029, 12, 1)
-
 
 
 def _normalize(text, root):
@@ -150,7 +146,7 @@ def golden_outputs(root, capsys):
 
 
 def test_golden_run(rec, capsys):
-    doc_intake.configure(today=lambda: TODAY)  # fresh_config (conftest) puts the real calendar back afterwards
+    configure(today=lambda: TODAY)  # fresh_config (conftest) puts the real calendar back afterwards
     got = golden_outputs(rec, capsys)
     today = dt.date.today().isoformat()
     got = {k.replace(os.sep, "_").replace(today, "TODAY"): v for k, v in got.items()}

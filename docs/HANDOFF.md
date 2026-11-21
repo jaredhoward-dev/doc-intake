@@ -1,13 +1,14 @@
-# Handoff: continuing stage 2
+# Handoff: continuing the work
 
 Where things stand and how to pick the work up on another machine.
 
 ## State
 
 - Stage 1 (the engine as `doc_intake/`, CI, docs) is on `main`.
-- Stage 2: the engine's tests against a fake host (`tests/host.py`), example profiles (`profiles/`,
-  [profiles.md](profiles.md)) and a minimal CLI ([cli.md](cli.md)) are done and tagged `v0.1.0`.
-  Since then: `wrong`, `doctor`, `box_row`, a utility-bill example; see [ROADMAP.md](../ROADMAP.md).
+- Stage 2 is done: the engine's tests against a fake host (`tests/host.py`), example profiles (`profiles/`,
+  [profiles.md](profiles.md)) and a minimal CLI ([cli.md](cli.md)), tagged `v0.1.0`.
+- Stage 3 is under way: `wrong`, `doctor`, `box_row`, a utility-bill example; see [ROADMAP.md](../ROADMAP.md).
+  They are on `main` but not yet in a tag.
 - The engine came from its first host; changes there after the copy must be carried over by hand
   until the host pins this package instead. Fixes made here (bounded reads on macOS, the senders map
   never listed as a profile) need carrying back the same way.
@@ -20,7 +21,7 @@ Where things stand and how to pick the work up on another machine.
     cd ../doc-intake-<slug>
     python3 -I -m pytest -q tests
 
-Next: the `v0.1.0` tag hosts pin (`pyproject.toml` is in place), then the follow-ups in
+Next: the stage 3 items left in [ROADMAP.md](../ROADMAP.md) and the follow-ups in
 [followups.md](followups.md). Each is its own pull request against `main`.
 
 ## Rules that travel with the code

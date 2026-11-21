@@ -8,7 +8,7 @@ import host
 import pytest
 from helpers import ACCOUNT, drop, inbox, run
 
-import doc_intake
+from doc_intake import configure
 from doc_intake import detect, locate, places, preview, reader
 from doc_intake import fields as fx
 from doc_intake import snapshots as snap
@@ -51,7 +51,7 @@ def make_pdf(path, lines):
     content = "BT /F1 9 Tf 11 TL 20 760 Td " + " ".join(f"({esc(ln)}) Tj T*" for ln in lines) + " ET"
     objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
-            "/Resources << /Font << /F1 5 0 R >> >> >>",
+            + "/Resources << /Font << /F1 5 0 R >> >> >>",
             f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
             "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>"]
     out, offs = b"%PDF-1.4\n", []
@@ -76,15 +76,15 @@ def rec(records, monkeypatch):
 
 @pytest.fixture
 def hooks():
-    """Set engine hooks for one test with doc_intake.configure(), and put the old values back after it."""
+    """Set engine hooks for one test with configure(), and put the old values back after it."""
     saved = {}
 
     def set_(**kw):
         for k in kw:
             saved.setdefault(k, getattr(CFG, k))
-        doc_intake.configure(**kw)
+        configure(**kw)
     yield set_
-    doc_intake.configure(**saved)
+    configure(**saved)
     host.configure()
 
 
