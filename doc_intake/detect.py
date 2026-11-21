@@ -69,26 +69,41 @@ def _longest_stretch(raw, groups, starts, hi, ok):
     return best
 
 
-def _card_spans(text, quiet=None):
+def _card_stretch_ok(piece):
+    """A stretch of whole groups that is a card: card-grouped, and length, prefix and Luhn pass."""
+    return bool(_CARD_GROUPS.match(piece)) and is_card(re.sub(r"\D", "", piece))
+
+
+def _has_shorter_card(raw, groups, i, j):
+    """Whether a stretch from group i ending before group j is a card too (4111 1111 1111 1111 912 passes as a
+    19-digit card, and so does its first sixteen): then the groups past the shorter card may be a neighbour's."""
+    return any(_card_stretch_ok(raw[groups[i][0]:groups[jj][1]]) for jj in range(i, j))
+
+
+def _card_spans(text, quiet=None, overlong=None):
     """[(start, end, kind)] for card candidates. A run of digit groups (a CSV row with an expiry, a list number
     before the card, two cards in a row) yields every card in it: the longest stretch of whole groups from each start
     that passes length, prefix and Luhn, overlapping stretches merged into one span. When the merged stretches end at
     different groups, which one is the card is unknown and the last four could be a neighbour's, so (start, end) goes
-    into quiet and the tag shows no digits. Between and beside the cards, a card-grouped stretch that fails Luhn
-    is hidden as long-number: when it fills its gap, or when every other group there is shorter than four digits.
-    A run that yields any span also yields the SSN-shaped dash groups glued into it (_glued_ssns)."""
+    into quiet and the tag shows no digits. A card whose stretch has a shorter card inside it from the same start
+    goes into overlong: its tag shows no digits either, unless an SSN clips it down to that shorter card. Between and
+    beside the cards, a card-grouped stretch that fails Luhn is hidden as long-number: when it fills its gap, or
+    when every other group there is shorter than four digits. A run that yields any span, or holds a plain long
+    number (a group of 10+ digits), also yields the SSN-shaped dash groups glued into it (_glued_ssns)."""
     out = []
     for m in _CARD.finditer(text):
         raw, base = m.group(0), m.start()
         groups = [(g.start(), g.end()) for g in _CARD_PIECE.finditer(raw)]
         if "." not in raw and is_card(re.sub(r"\D", "", raw)):
             out.append((m.start(), m.end(), "card"))
+            if overlong is not None and _has_shorter_card(raw, groups, 0, len(groups) - 1):
+                overlong.add(out[-1][:2])
             out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups))
             continue
         found = len(out)
 
         def card_ok(piece, i, j):
-            return bool(_CARD_GROUPS.match(piece)) and is_card(re.sub(r"\D", "", piece))
+            return _card_stretch_ok(piece)
 
         long_before = [0]  # long_before[k]: groups of 4+ digits among groups[:k]
         for s, e in groups:
@@ -100,10 +115,12 @@ def _card_spans(text, quiet=None):
             b = _longest_stretch(raw, groups, (i,), len(groups), card_ok)
             if not b:
                 continue
+            longer = _has_shorter_card(raw, groups, b[0], b[1])
             if cards and b[0] <= cards[-1][1]:
-                cards[-1] = (cards[-1][0], max(cards[-1][1], b[1]), cards[-1][2] or b[1] != cards[-1][1])
+                c0, c1, merged, over = cards[-1]
+                cards[-1] = (c0, max(c1, b[1]), merged or b[1] != c1, over or longer)
             else:
-                cards.append((b[0], b[1], False))
+                cards.append((b[0], b[1], False, longer))
 
         def misread_piece(a, z):  # a Luhn-failing card-grouped stretch with an issuer prefix
             piece = raw[groups[a][0]:groups[z][1]]
@@ -112,10 +129,12 @@ def _card_spans(text, quiet=None):
                     and card_prefix_ok(re.sub(r"\D", "", piece)))
 
         gaps, prev = [], 0
-        for ci, cj, ambiguous in cards:
+        for ci, cj, ambiguous, longer in cards:
             out.append((base + groups[ci][0], base + groups[cj][1], "card"))
             if ambiguous and quiet is not None:
                 quiet.add(out[-1][:2])
+            if longer and overlong is not None:
+                overlong.add(out[-1][:2])
             # A misread stretch overlapping the card's start or end: hide the part outside the card as well.
             head = min((a for a in range(max(prev, ci - 6), ci) for z in range(ci, min(cj, a + 6))
                         if misread_piece(a, z)), default=ci)
@@ -141,7 +160,7 @@ def _card_spans(text, quiet=None):
             else:
                 out.extend((base + groups[a][0], base + groups[z][1], "long-number")
                            for a, z in _misread_tiling(raw, groups, lo, hi))
-        if len(out) > found:
+        if len(out) > found or any(e - s >= 10 for s, e in groups):
             out.extend((base + a, base + z, k) for a, z, k in _glued_ssns(raw, groups))
     return out
 
@@ -394,9 +413,10 @@ def _tag(kind, value=""):
     return TAGS[kind]
 
 
-def raw_spans(text, quiet=None):
-    """Every candidate (start, end, kind) before overlap resolution. A set passed as quiet collects the card
-    spans whose tag must show no digits (see _card_spans)."""
+def raw_spans(text, quiet=None, overlong=None, glued=None):
+    """Every candidate (start, end, kind) before overlap resolution. Sets passed as quiet and overlong collect the
+    card spans whose tag must show no digits (see _card_spans); a list passed as glued collects the SSNs found
+    glued into digit runs (_glued_ssns)."""
     out = []
 
     def add(m, kind, group=0):
@@ -416,7 +436,10 @@ def raw_spans(text, quiet=None):
         k = ssn_kind(*m.groups())
         if k:
             out.append((m.start(1), m.end(3), k))
-    out.extend(_card_spans(text, quiet))
+    cards = _card_spans(text, quiet, overlong)
+    out.extend(cards)
+    if glued is not None:  # the only SSNs _card_spans yields are glued ones
+        glued.extend(c for c in cards if c[2] in ("ssn", "itin"))
     transport = transport_header_spans(text)
     for m in _NINE.finditer(text):
         if aba_ok(m.group(0)) and not any(s <= m.start() < e for s, e in transport):
@@ -505,10 +528,34 @@ class _Disjoint:
 
 
 def find_spans(text):
-    """Non-overlapping spans [(start, end, kind, tag)], sorted by start."""
+    """Non-overlapping spans [(start, end, kind, tag)], sorted by start.
+
+    SSNs glued into a digit run go in only where they cut into nothing but a card or a number: resolved first
+    without them, a glued SSN overlapping any other span (an SSN, a long number and more digits run into an
+    e-mail's local part, read as one e-mail) is left to that span, since find_spans drops a span it can't take whole and the digits only that span
+    hid would show. The rest are added and everything is resolved again, the cards and numbers clipped around them."""
+    quiet, overlong, glued = set(), set(), []
+    raw = raw_spans(text, quiet, overlong, glued)
+    if not glued:
+        return _resolve(text, raw, quiet, overlong)
+    left = Counter(glued)
+    base = []
+    for c in raw:
+        if left[c]:
+            left[c] -= 1
+        else:
+            base.append(c)
+    first = [(s, e) for s, e, k, _ in _resolve(text, base, quiet, overlong) if k not in ("card", "long-number")]
+    starts, ends = [s for s, _ in first], [e for _, e in first]
+    kept = [(s, e, k) for s, e, k in glued
+            if bisect.bisect_right(ends, s) >= bisect.bisect_left(starts, e)]  # overlaps none of them
+    return _resolve(text, base + kept, quiet, overlong)
+
+
+def _resolve(text, raw, quiet, overlong):
+    """find_spans' overlap resolution: each candidate in priority order, taken where it overlaps nothing taken."""
     rank = {k: i for i, k in enumerate(PRIORITY)}
-    quiet = set()
-    cands = sorted(raw_spans(text, quiet), key=lambda s: (rank[s[2]], s[0], -(s[1] - s[0])))
+    cands = sorted(raw, key=lambda s: (rank[s[2]], s[0], -(s[1] - s[0])))
     taken, spans = [], _Disjoint()
     cur = None
 
@@ -522,7 +569,7 @@ def find_spans(text):
             cur = rank[k]
         hits = spans.overlapping(s, e)
         if not hits:
-            take(s, e, k, "[CARD]" if k == "card" and (s, e) in quiet else _tag(k, text[s:e]))
+            take(s, e, k, "[CARD]" if k == "card" and ((s, e) in quiet or (s, e) in overlong) else _tag(k, text[s:e]))
             continue
         if k not in ("card", "long-number"):
             continue
@@ -530,8 +577,8 @@ def find_spans(text):
         # hide the digits left outside it too, or the rest of the card would stay in the text. A card is counted
         # once: its last piece is the card, earlier pieces are numbers. The tag shows the card's last four only when
         # that piece is a whole card itself (the card beside a glued SSN), or holds all four and ends where the card
-        # ends (and the card's tag wasn't quiet); otherwise it is [CARD], so no digit hidden under the other span leaks
-        # through the tag.
+        # ends; otherwise it is [CARD], so no digit hidden under the other span leaks through the tag. An ambiguous
+        # (quiet) card always gets [CARD]; an overlong one shows a last four only when clipped to a whole card.
         pieces, pos = [], s
         for ts, te in hits + [(e, e)]:
             lo, hi = max(pos, s), min(ts, e)
@@ -542,7 +589,12 @@ def find_spans(text):
         for i, (ps, pe) in enumerate(pieces):
             if k == "card" and i == len(pieces) - 1:
                 digits = re.sub(r"\D", "", text[ps:pe])
-                show = is_card(digits) or (len(digits) >= 4 and not text[pe:e].strip(" .-") and (s, e) not in quiet)
+                if (s, e) in quiet:
+                    show = False
+                elif (s, e) in overlong:  # clipped to a whole card (the extra groups were an SSN's): its own four
+                    show = is_card(digits)
+                else:
+                    show = is_card(digits) or (len(digits) >= 4 and not text[pe:e].strip(" .-"))
                 take(ps, pe, "card", _tag("card", text[ps:pe]) if show else "[CARD]")
             else:
                 take(ps, pe, "long-number", TAGS["long-number"])
