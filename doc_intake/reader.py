@@ -170,6 +170,20 @@ def uncapped_reads():
     return _UNCAPPED[0]
 
 
+def _reap_by(pid, deadline):
+    """wait4's (pid, status, rusage) once the child has exited, or None if it is still running at deadline."""
+    pause = 0.001
+    while True:
+        r = os.wait4(pid, os.WNOHANG)
+        if r[0]:
+            return r
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return None
+        time.sleep(min(pause, left))
+        pause = min(pause * 2, 0.05)
+
+
 def run_bounded(fn, *args, mem_mb=None, timeout=None):
     """Run fn(*args) in a forked child limited to mem_mb of address space (RLIMIT_AS, inherited by everything it
     starts) and timeout seconds, in its own process group so a timeout kills its tools too. Where the OS refuses
@@ -207,10 +221,11 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         finally:
             os._exit(code)
     os.close(wfd)
-    chunks, timed_out = [], False
+    deadline = t0 + timeout
+    chunks, timed_out, reaped = [], False, None
     try:
         while True:
-            left = t0 + timeout - time.monotonic()
+            left = deadline - time.monotonic()
             if left <= 0:
                 timed_out = True
                 break
@@ -220,13 +235,20 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
                 if not b:
                     break
                 chunks.append(b)
+        if not timed_out:
+            # EOF comes when the child closes the pipe, a moment before it exits. Killing the group now could
+            # catch it in between (a loaded machine deschedules it there) and a finished read would look killed.
+            reaped = _reap_by(pid, deadline)
+            timed_out = reaped is None
     finally:
         os.close(rfd)
         try:
-            os.killpg(pid, signal.SIGKILL)  # a timeout, or tools the child left behind
+            # A timeout, or tools the child left behind. After _reap_by the group id stays reserved while any of
+            # them is alive (POSIX doesn't reuse it), so this reaches only them; with none left it's a no-op.
+            os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-        _, status, ru = os.wait4(pid, 0)
+        _, status, ru = reaped or os.wait4(pid, 0)
     data = b"".join(chunks)
     capped = {b"1": True, b"0": False}.get(data[:1])
     if capped is False:

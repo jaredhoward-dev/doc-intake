@@ -148,6 +148,47 @@ def test_run_bounded_timeout_kills_the_child():
     assert value is None and info["reason"] == "timeout" and time.monotonic() - t0 < 10
 
 
+def slow_exit(monkeypatch, seconds):
+    """The child pauses between closing its pipe and exiting, as when a loaded machine deschedules it there."""
+    real = os._exit
+    monkeypatch.setattr(os, "_exit", lambda code: (time.sleep(seconds), real(code)))
+
+
+def test_run_bounded_finished_read_is_not_killed_on_the_way_out(monkeypatch):
+    # The parent used to kill the child's group as soon as the pipe closed: a child caught before exit was
+    # reported "too large", which failed small reads about 1 in 1000 under load.
+    slow_exit(monkeypatch, 0.3)
+    value, info = reader.run_bounded(lambda: "small", mem_mb=512, timeout=30)
+    assert value == "small" and info["ok"] and info["reason"] is None
+
+
+def test_run_bounded_child_that_never_exits_after_its_answer_times_out(monkeypatch):
+    slow_exit(monkeypatch, 30)
+    t0 = time.monotonic()
+    value, info = reader.run_bounded(lambda: "small", mem_mb=512, timeout=1)
+    assert value is None and info["reason"] == "timeout" and time.monotonic() - t0 < 10
+
+
+def gone(pid):
+    """True when pid has exited (absent, or a zombie its new parent hasn't reaped yet)."""
+    import subprocess
+    r = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    return not r.stdout.strip() or r.stdout.strip().startswith("Z")
+
+
+def test_run_bounded_still_kills_tools_the_child_left_behind():
+    import subprocess
+
+    def leave_a_tool():
+        return subprocess.Popen(["sleep", "30"]).pid
+    pid, info = reader.run_bounded(leave_a_tool, mem_mb=512, timeout=30)
+    assert info["ok"]
+    t0 = time.monotonic()
+    while not gone(pid) and time.monotonic() - t0 < 5:
+        time.sleep(0.05)
+    assert gone(pid)
+
+
 def test_run_bounded_reports_only_the_exception_type():
     def boom():
         raise ValueError("secret page text")
