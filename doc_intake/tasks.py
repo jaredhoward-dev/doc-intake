@@ -157,7 +157,7 @@ def cmd_labels(prof, args, out=print):
         out(f"{os.path.basename(p)}: {doc['total']} pages, text {doc['method']}; known sender: "
             + (f"yes ({kv[2]}, p.{kv[1]})" if kv else "no"))
         red = detect.redact("\n".join(t for _, t in doc["pages"]))[0]
-        soon = dt.date.today() + dt.timedelta(days=60)
+        soon = CFG.today() + dt.timedelta(days=60)
         kinds = []
         for m in re.finditer(fx.DATE, red, re.I):
             d = fx.parse_date(m.group(0))

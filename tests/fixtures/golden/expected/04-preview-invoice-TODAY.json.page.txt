@@ -2,7 +2,7 @@
  "approve_hint": true,
  "badges": [
   "1 flagged",
-  "1 flagged"
+  "complete"
  ],
  "cards": 2,
  "check_warn": 0,

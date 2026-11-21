@@ -41,6 +41,7 @@ import os
 import re
 
 from . import detect
+from .config import CFG
 
 # Set by config.configure: the folder of profile JSON files, and the known-senders map (optional).
 PROFILE_DIR = None
@@ -418,12 +419,13 @@ _RENEWAL = re.compile(r"(?i)\b(?:renew\w*|expir\w*|next\s+(?:bill\w*|payment|cha
 
 
 def plausible_document_date(iso, before=""):
-    """False for a renewal, expiry or next-bill date (by the words just before it) or one over 60 days ahead."""
+    """False for a renewal, expiry or next-bill date (by the words just before it) or one over 60 days after the
+    configured today (config.CFG.today)."""
     try:
         d = dt.date.fromisoformat(iso)
     except ValueError:
         return False
-    if d > dt.date.today() + dt.timedelta(days=60):
+    if d > CFG.today() + dt.timedelta(days=60):
         return False
     return not _NOT_DOC_DATE.search(before or "")
 
@@ -440,8 +442,9 @@ FUTURE_OK = {"maturity_date", "payment_due_date"}
 
 
 def suspicious(field, ftype, value, today=None):
-    """Why a value looks wrong (for the preview), or None. Checks shape only; the user decides."""
-    today = today or dt.date.today()
+    """Why a value looks wrong (for the preview), or None. Checks shape only; the user decides. Dates are judged
+    against today, by default the configured one (config.CFG.today)."""
+    today = today or CFG.today()
     v = value or ""
     if ftype == "org_name":
         if len(v) > 40:

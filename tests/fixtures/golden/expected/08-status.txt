@@ -2,8 +2,8 @@ $ host.py status
 rc=0
 --- stdout
 task file                profile  approved  docs  fields  missing  req. missing  flagged docs  complete  created           note
-invoice-<TODAY>.json  invoice  yes       2     11      5        0             2             2         <NOW>
-paystub-<TODAY>.json  paystub  no        1     17      18       0             1             1         <NOW>
-receipt-<TODAY>.json  receipt  yes       3     13      2        0             3             3         <NOW>
+invoice-<TODAY>.json  invoice  yes       2     11      5        0             1             2         <NOW>
+paystub-<TODAY>.json  paystub  no        1     17      18       0             0             1         <NOW>
+receipt-<TODAY>.json  receipt  yes       3     13      2        0             2             3         <NOW>
 tax_w2-<TODAY>.json   tax_w2   yes       1     6       6        0             0             1         <NOW>
 --- stderr
