@@ -272,9 +272,7 @@ def _ssn_like(area, group, serial):
     ("Card 4111-1111-1111-1111-{ssn}", "Card [CARD-last4:1111]-[SSN]", {"card": 1, "ssn": 1}),
     ("Card {ssn}-4111-1111-1111-1111 end", "Card [SSN]-[CARD-last4:1111] end", {"ssn": 1, "card": 1}),
     ("Card 4111 1111 1111 1111-{ssn}", "Card [CARD-last4:1111]-[SSN]", {"card": 1, "ssn": 1}),
-    # the dash-joined digits after a glued SSN are hidden too
-    ("Card 5555-5555-5555-4444-{ssn}-12", "Card [CARD-last4:4444]-[SSN]-[NUMBER]",
-     {"card": 1, "ssn": 1, "long-number": 1}),
+    ("Card 5555-5555-5555-4444-{ssn}-12", "Card [CARD-last4:4444]-[SSN]-12", {"card": 1, "ssn": 1}),
     ("Card 4111-1111-1111-1112-{ssn}", "Card [NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),  # a misread too
     ("Card 4111-1111-1111-1111-{itin}", "Card [CARD-last4:1111]-[ITIN]", {"card": 1, "itin": 1}),
     ("{ssn}-5555 5555 5555 4444", "[SSN]-[CARD-last4:4444]", {"ssn": 1, "card": 1}),
@@ -397,7 +395,7 @@ def test_ambiguous_card_run_tag_shows_no_digits_even_beside_a_glued_ssn():
     # a run holding a plain long number (a group of 10+ digits) gives up its glued SSN too
     ("12345678901-{ssn}", "[NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),
     ("{ssn}-12345678901", "[SSN]-[NUMBER]", {"ssn": 1, "long-number": 1}),
-    ("Ref 12345678901.{ssn}-2030 end", "Ref [NUMBER].[SSN]-[NUMBER] end", {"long-number": 2, "ssn": 1}),
+    ("Ref 12345678901.{ssn}-2030 end", "Ref [NUMBER].[SSN]-2030 end", {"long-number": 1, "ssn": 1}),
     # card-grouped digits without an issuer prefix and no group of 10+: nothing hidden, so the run gives up nothing
     ("Order 2030.1111.2222.3333-{ssn}", "Order 2030.1111.2222.3333-{ssn}", {}),
     # the shapes left to the owner stay as they are: after an expiry, after a double dash, beside bare 4-digit groups
@@ -412,28 +410,33 @@ def test_ssn_shaped_group_beside_a_number_without_a_card(text, want_red, want_co
 
 
 @pytest.mark.parametrize("text,want_red,want_counts", [
-    # the license value (16 characters at most) runs into the SSN and stops inside the groups after it; the rest of
-    # a run with a glued SSN is hidden as a number, so no digit of the value is left after the SSN
-    ("Driver license {ssn}-4111-1111 4111111111111111",
-     "Driver license [SSN]-[DRIVERS-LICENSE]-[NUMBER] [CARD-last4:1111]",
-     {"ssn": 1, "drivers-license": 1, "long-number": 1, "card": 1}),
-    ("Driver license 9999999999.{ssn}-1234 5678 9012", "Driver license [DRIVERS-LICENSE].[SSN]-[NUMBER]",
-     {"drivers-license": 1, "ssn": 1, "long-number": 1}),
-    ("Driver license 12345678901-{ssn}-12345678", "Driver license [DRIVERS-LICENSE]-[SSN]-[NUMBER]",
-     {"drivers-license": 1, "ssn": 1, "long-number": 1}),
+    # the license value (16 characters at most) runs into the SSN; redact re-scans and the label finds the rest, as
+    # it did in round 5, which find_spans and redact now keep whole
+    ("Driver license {ssn}-4111-1111 4111111111111111", "Driver license [SSN]-[DRIVERS-LICENSE] [CARD-last4:1111]",
+     {"ssn": 1, "drivers-license": 1, "card": 1}),
+    ("Driver license 9999999999.{ssn}-1234 5678 9012", "Driver license [DRIVERS-LICENSE].[DRIVERS-LICENSE] 5678 9012",
+     {"drivers-license": 2}),
+    ("Driver license 12345678901-{ssn}-12345678", "Driver license [DRIVERS-LICENSE][DRIVERS-LICENSE]",
+     {"drivers-license": 2}),
+    ("Driver license 12345678901-{ssn}--12", "Driver license [DRIVERS-LICENSE][DRIVERS-LICENSE]",
+     {"drivers-license": 2}),
 ])
 def test_glued_ssn_account_tail_digitless(text, want_red, want_counts):
     text = text.format(ssn=SSN)
     red, c = detect.redact(text)
     assert red == want_red and c == want_counts, red
-    spans = detect.find_spans(text)  # fields.py and snapshots.py use one pass: every digit is covered there too
-    assert all(any(s <= k < e for s, e, _, _ in spans) for k, ch in enumerate(text) if ch.isdigit()), spans
+    # one pass (fields.py, snapshots.py): every digit of the SSN is covered, and no tag shows a digit
+    spans = detect.find_spans(text)
+    at = text.index(SSN)
+    assert all(any(s <= k < e for s, e, _, _ in spans) for k in range(at, at + len(SSN)) if text[k].isdigit())
+    assert not any(ch.isdigit() for _, _, _, tag in spans for ch in tag if "last4" not in tag)
 
 
-def test_digits_after_a_labelled_ssn_are_hidden():
-    # an SSN found by its label, then a dash and more digits: the value goes on past the SSN
+def test_digits_after_a_labelled_ssn():
+    # an SSN found by its label, then a dash and more digits: the digits after it stay, as in round 5 (SSN-adjacent
+    # shapes are the owner's pending decision)
     red, c = detect.redact("SSN: " + SSN + "-30722 end")
-    assert red == "SSN: [SSN]-[NUMBER] end" and c == {"ssn": 1, "long-number": 1}, red
+    assert red == "SSN: [SSN]-30722 end" and c == {"ssn": 1}, red
     # a date after the dash is left whole, so the DOB label still finds it
     red, c = detect.redact("SSN 9999999999\nDOB: " + SSN + "-01/02/1990")
     assert red == "SSN [NUMBER]\nDOB: [SSN]-[DOB]" and c == {"long-number": 1, "ssn": 1, "dob": 1}, red
@@ -453,20 +456,19 @@ def test_account_tag_never_shows_ssn_serial():
 
 
 def test_glued_ssn_inside_an_email_span():
-    # the digits run into an e-mail's local part: the SSN is hidden as an SSN and the rest of the e-mail as [EMAIL]
+    # the digits run into an e-mail's local part: the e-mail hides it all, as in round 5
     text = SSN + "-12345678901-4000someone@example.com end"
     red, c = detect.redact(text)
-    assert red == "[SSN]-[EMAIL] end" and c == {"ssn": 1, "email": 1}, red
+    assert red == "[EMAIL] end" and c == {"email": 1}, red
 
 
 @pytest.mark.parametrize("text,want_red,want_counts", [
-    # the account value runs into the SSN: the account keeps its part outside it, tagged without digits (it showed
-    # the SSN's 2345 in its tag, and -6789 in the text)
-    ("Account: 12345678901-{ssn} 4111111111111111", "Account: [ACCOUNT]-[SSN] [CARD-last4:1111]",
-     {"account": 1, "ssn": 1, "card": 1}),
-    # the account value covers the SSN whole: its tag showed the SSN's serial
-    ("Acct # 12345-{ssn} 4111111111111111", "Acct # [ACCOUNT]-[SSN] [CARD-last4:1111]",
-     {"account": 1, "ssn": 1, "card": 1}),
+    # with a card in the run, round 5 already took the glued SSN, so the account value lost to it (as before)
+    ("Account: 12345678901-{ssn} 4111111111111111", "Account: [NUMBER]-[SSN] [CARD-last4:1111]",
+     {"long-number": 1, "ssn": 1, "card": 1}),
+    ("Acct # 12345-{ssn} 4111111111111111", "Acct # 12345-[SSN] [CARD-last4:1111]", {"ssn": 1, "card": 1}),
+    # without one, the account value runs into the SSN: its tag showed 2345 and -6789 stayed; now the tag shows no
+    # digits and the SSN's digits past the account are hidden
     ("Account: 12345678901-{ssn}", "Account: [ACCOUNT]-[SSN]", {"account": 1, "ssn": 1}),
 ])
 def test_glued_ssn_partly_inside_account_span(text, want_red, want_counts):
@@ -474,17 +476,16 @@ def test_glued_ssn_partly_inside_account_span(text, want_red, want_counts):
     text = text.format(ssn=ssn)
     red, c = detect.redact(text)
     assert red == want_red and c == want_counts, red
-    assert not any(d in red for d in ("2345", "6789"))
+    assert "6789" not in red and "last4:2345" not in red and "last4:6789" not in red
 
 
 @pytest.mark.parametrize("text,want_red,want_counts", [
     # the SSN label finds the same group: one SSN, not two
     ("SSN: 12345678901-{ssn}", "SSN: [NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),
     ("SSN {ssn} 4111-1111-1111-1111-{ssn}", "SSN [SSN] [CARD-last4:1111]-[SSN]", {"ssn": 2, "card": 1}),
-    # an EIN or phone glued by a dash isn't found (their own edges refuse a dash), but a run with a glued SSN is
-    # hidden whole, so their digits go too
-    ("EIN 12-3456789-{ssn}-12345678901", "EIN [NUMBER]-[SSN]-[NUMBER]", {"ssn": 1, "long-number": 2}),
-    ("Phone 212-555-0142-{ssn}-12345678901", "Phone [NUMBER]-[SSN]-[NUMBER]", {"ssn": 1, "long-number": 2}),
+    # an EIN or phone glued by a dash isn't found (their own edges refuse a dash), as before: the owner's decision
+    ("EIN 12-3456789-{ssn}-12345678901", "EIN 12-3456789-[SSN]-[NUMBER]", {"ssn": 1, "long-number": 1}),
+    ("Phone 212-555-0142-{ssn}-12345678901", "Phone 212-555-0142-[SSN]-[NUMBER]", {"ssn": 1, "long-number": 1}),
     ("https://example.com/12345678901-{ssn}", "https://example.com/[NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),
 ])
 def test_glued_ssn_beside_other_spans(text, want_red, want_counts):
