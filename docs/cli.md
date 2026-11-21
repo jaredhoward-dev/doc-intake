@@ -101,11 +101,56 @@ dest = "Receipts/{year}"
 | `extract FILE... --pages SPEC [--llm-check] [--model M]` | A redacted extract of named pages, approved and read like a task file. |
 | `cleanup [--task PROFILE] [--older-than DAYS] [--dry-run]` | Delete old task files and extracts (30 days by default). |
 | `pairs [TASK_JSON...]` | Invoice and receipt pairs among approved task files, and whether their totals agree. Exit 1 on a mismatch. |
+| `doctor [--no-model]` | Check the setup without reading any document: the config, the places it names, the optional tools, the memory cap and the local model. Below. |
 
 The CLI adds no way around a guard. `approve` refuses anywhere but the user's own terminal and then still needs the
 desktop click; an assistant never runs it. `read` needs an approval and a reason. Nothing the CLI prints holds
 document text; values reach the assistant only through `read` of an approved file. See
 [engine.md](engine.md) for the full flow and its limits.
+
+## Checking the setup: `doctor`
+
+`doctor` says what the other commands would find, without reading a document:
+
+- the Python and doc-intake versions;
+- the config file it would use and how it was found (`--config`, `$DOC_INTAKE_CONFIG` or `./doc-intake.toml`),
+  whether it loads, and whether the root, inbox, state folder, `profiles_dir` and `senders_file` exist, with the
+  profile names found (names only; `privacy_terms_file` is reported as configured or not, never read);
+- the optional tools: `pdftotext`, `pdftoppm`, `tesseract`, ImageMagick (7, 6 or missing), `zxingcpp` and Pillow;
+- whether the memory cap applies here, from one bounded run of a function that reads nothing (on macOS it
+  doesn't; see the end of this page);
+- the local model: its name, or `not configured`. Only when one is configured does it ask the model server on
+  127.0.0.1 whether it answers (a 3-second timeout, nothing beyond 127.0.0.1); `--no-model` skips that.
+
+It prints one `name: result` line each (`ok`, `missing`, `not configured`), counts and names only. It is
+read-only: it creates no folder (a missing inbox or state folder is reported, not made, since the commands that
+need them make them) and writes nothing to the access log or the state folder. It exits 0 when the config loads
+and the root exists, whatever optional tools are missing, and 2 on a config error or a missing root, with the same
+one-line message the other commands give; the tool lines are still printed then.
+
+```console
+$ python3 -m doc_intake doctor
+python: 3.12.3 ok
+doc-intake: 0.1.0
+config: /home/example/doc-intake.toml (found by ./doc-intake.toml)
+config loads: ok
+root: ok
+inbox: ok
+state folder: missing
+profiles_dir: ok (2 profile(s): invoice, receipt)
+senders_file: ok
+privacy_terms_file: not configured
+routing rules: 3
+pdftotext: ok
+pdftoppm: ok
+tesseract: missing
+imagemagick: ok (6)
+zxing: missing
+pillow: ok
+memory cap: ok
+model: example-model
+model server: not reachable on 127.0.0.1:11434
+```
 
 ## An example session
 
@@ -139,5 +184,5 @@ and only then does `read` return the approved fields as JSON, logging the read a
 On macOS a bounded read runs without the memory cap (macOS refuses it); the timeout, the OCR pixel cap
 and ImageMagick's own limits still apply. `scan`, `fields`, `extract` and `preview --html` each say
 once per run how many files they read without the cap, and `scan --profile-mem` shows `mem_cap=yes`,
-`no` or `-` (not read in a bounded child) per file.
+`no` or `-` (not read in a bounded child) per file. `doctor` says up front whether the cap applies.
 See [engine.md](engine.md).
