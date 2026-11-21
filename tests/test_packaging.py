@@ -4,6 +4,7 @@ requires-python matches what the code needs (tomllib, so 3.11). No install here:
 import importlib
 import inspect
 import os
+import pathlib
 import tomllib
 
 import pytest
@@ -58,6 +59,6 @@ def test_license_matches_the_license_file(project):
 
 def test_requires_python_matches_the_code(project):
     assert project["project"]["requires-python"] == ">=3.11"
-    uses_tomllib = any("import tomllib" in open(os.path.join(PKG, n), encoding="utf-8").read()
+    uses_tomllib = any("import tomllib" in pathlib.Path(PKG, n).read_text(encoding="utf-8")
                        for n in os.listdir(PKG) if n.endswith(".py"))
     assert uses_tomllib  # tomllib is new in 3.11; drop the floor only with it

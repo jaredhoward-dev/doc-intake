@@ -6,10 +6,8 @@ sees it in the source; the card numbers are test numbers; the routing number is 
 import os
 import stat
 
-import pytest
-
 import host
-from doc_intake import places, reader
+from doc_intake import places
 
 SSN = "078" + "-05-" + "1120"
 CARD = "4111111111111111"
@@ -24,14 +22,6 @@ FAKES = [SSN, CARD, CARD_SPACED, ROUTING, ACCOUNT, EIN, MBI, "C12345678", "XYZ12
 
 def mode(p):
     return stat.S_IMODE(os.stat(p).st_mode)
-
-
-@pytest.fixture
-def rec(records, monkeypatch):
-    """records (conftest) with no terminal and no barcode module, unless a test says otherwise."""
-    monkeypatch.setattr(places, "is_tty", lambda: False)
-    monkeypatch.setattr(reader, "_zxing", lambda: None)
-    return records
 
 
 def inbox(root):

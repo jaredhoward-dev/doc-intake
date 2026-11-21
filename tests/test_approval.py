@@ -2,16 +2,18 @@
 
 Through the fake host (tests/host.py) against a throwaway records root. No real dialog and no real terminal: the
 dialog, the phrase and /dev/tty are stood in for by fakes. Every document here is made up."""
+import contextlib
 import json
 import subprocess
 
 import pytest
 
-from doc_intake import approval, places, reader, tasks
-from helpers import ACCOUNT, ROUTING, SSN, drop, rec, run  # noqa: F401  (rec is a fixture)
+from doc_intake import approval, places, tasks
+from helpers import ACCOUNT, ROUTING, SSN, drop, run
 import host
 
 REAL_ASK = approval.ask_desktop  # the conftest fixture replaces it after import
+REAL_TTY_IO = approval.tty_io  # the same
 
 PAYSTUB = f"""Example Payroll Co   Earnings Statement
 Pay date: 01/15/2030    Pay period: 01/01/2030 - 01/14/2030
@@ -227,7 +229,7 @@ def test_accepted_dialog_approves(rec, monkeypatch):
 
 
 def _tty(answer, shown):
-    return lambda: (shown.append, lambda: answer(shown))
+    return lambda: contextlib.nullcontext((shown.append, lambda: answer(shown)))
 
 
 def test_terminal_confirm_phrase(rec, monkeypatch, capsys):
@@ -288,3 +290,58 @@ def test_approved_task_for_finds_a_document_inside_an_approved_batch(rec):
         assert one["values"] and all(x["file"] == src["file"] for x in one["values"])
     edit(t, lambda b: b["values"].append({**b["values"][0], "field": "tax"}))
     assert all(tasks.approved_task_for(s["sha256"]) is None for s in body["sources"])
+
+
+class _FakeTty:
+    """Stands in for /dev/tty: records what was written and whether it was closed."""
+    def __init__(self, answer):
+        self.answer, self.written, self.closed = answer, [], False
+
+    def write(self, s):
+        self.written.append(s)
+
+    def flush(self):
+        pass
+
+    def readline(self):
+        if isinstance(self.answer, BaseException):
+            raise self.answer
+        return self.answer
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.closed = True
+
+
+def _open_tty(fake, opened):
+    def fake_open(path, *a, **kw):
+        opened.append(path)
+        return fake
+    return fake_open
+
+
+def test_tty_io_without_a_terminal_is_an_approval_error(monkeypatch):
+    def no_tty(path, *a, **kw):
+        raise OSError("no controlling terminal")
+    monkeypatch.setattr("builtins.open", no_tty)
+    with pytest.raises(approval.ApprovalError, match="controlling terminal"):
+        with REAL_TTY_IO():
+            pass
+
+
+def test_tty_io_closes_the_terminal_after_the_phrase(monkeypatch):
+    fake, opened = _FakeTty("maple otter quill river\n"), []
+    monkeypatch.setattr("builtins.open", _open_tty(fake, opened))
+    monkeypatch.setattr(approval, "phrase", lambda n=4: "maple otter quill river")
+    assert approval.ask_terminal("Approve?", io=REAL_TTY_IO) is True
+    assert opened == ["/dev/tty"] and fake.closed
+
+
+def test_tty_io_closes_the_terminal_when_reading_fails(monkeypatch):
+    fake, opened = _FakeTty(KeyboardInterrupt()), []
+    monkeypatch.setattr("builtins.open", _open_tty(fake, opened))
+    with pytest.raises(KeyboardInterrupt):
+        approval.ask_terminal("Approve?", io=REAL_TTY_IO)
+    assert fake.closed

@@ -19,6 +19,15 @@ def records(tmp_path, monkeypatch):
     return root
 
 
+@pytest.fixture
+def rec(records, monkeypatch):
+    """records with no terminal and no barcode module, unless a test says otherwise."""
+    from doc_intake import places, reader
+    monkeypatch.setattr(places, "is_tty", lambda: False)
+    monkeypatch.setattr(reader, "_zxing", lambda: None)
+    return records
+
+
 @pytest.fixture(autouse=True)
 def no_real_dialog(monkeypatch):
     """No test ever shows a dialog on the desktop: the user's click is stood in for by an accept, unless a test

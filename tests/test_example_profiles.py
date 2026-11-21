@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-import doc_intake
+from doc_intake import configure
 import host
 from doc_intake import fields as fx
 from helpers import ACCOUNT, CARD, FAKES
@@ -20,7 +20,7 @@ EXAMPLES = ("receipt", "invoice", "utility_bill")
 @pytest.fixture
 def examples():
     """The engine pointed at the example profiles and senders map; the fake host's settings put back after."""
-    doc_intake.configure(profiles_dir=PROFILES, senders_file=SENDERS)
+    configure(profiles_dir=PROFILES, senders_file=SENDERS)
     yield
     host.configure()
 

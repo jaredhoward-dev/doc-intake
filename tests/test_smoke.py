@@ -1,7 +1,7 @@
 """Smoke tests: the package imports, configure() refuses unknown settings, the detectors count and redact."""
 import unittest
 
-import doc_intake
+from doc_intake import configure
 from doc_intake import detect
 
 CARD = "4111 1111 1111 1111"  # a well-known test card number (passes Luhn), not a real account
@@ -10,7 +10,7 @@ CARD = "4111 1111 1111 1111"  # a well-known test card number (passes Luhn), not
 class Smoke(unittest.TestCase):
     def test_configure_rejects_unknown_settings(self):
         with self.assertRaises(TypeError):
-            doc_intake.configure(no_such_setting=1)
+            configure(no_such_setting=1)
 
     def test_card_is_counted_and_redacted(self):
         text = f"Paid with card {CARD} on 2030-01-02"

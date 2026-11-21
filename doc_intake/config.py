@@ -86,9 +86,6 @@ def configure(**kw):
         raise TypeError(f"unknown engine settings: {', '.join(sorted(bad))}")
     for k, v in kw.items():
         setattr(CFG, k, v)
-    if "profiles_dir" in kw or "senders_file" in kw:
-        from . import fields
-        fields.PROFILE_DIR, fields.VENDORS_FILE = CFG.profiles_dir, CFG.senders_file
     from . import approval
     approval.QUESTION, approval.QUESTION_EXTRACT = CFG.approve_question, CFG.approve_question_extract
     return CFG

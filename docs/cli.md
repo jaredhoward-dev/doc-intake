@@ -15,7 +15,7 @@ that runs the same CLI and exits with the same status:
 
     pip install .                                                         # from a checkout
     pip install '.[barcodes]'                                             # plus zxing-cpp and Pillow
-    pip install git+https://github.com/jaredhoward-dev/doc-intake@v0.1.0  # a pinned tag, once tagged
+    pip install git+https://github.com/jaredhoward-dev/doc-intake@v0.1.0  # a pinned tag
 
 Only the `doc_intake` package is installed. The example config (`examples/doc-intake.toml`) and the example
 profiles (`profiles/`) stay in the repo: copy them next to each other (the example config points at

@@ -6,6 +6,7 @@ printed: a failure reports file names and counts only. Without it, that check is
 """
 import ast
 import os
+import pathlib
 import re
 import sys
 import unittest
@@ -22,7 +23,7 @@ class Generic(unittest.TestCase):
     def test_imports_are_stdlib_own_or_optional(self):
         bad = {}
         for p in files():
-            for node in ast.walk(ast.parse(open(p, encoding="utf-8").read())):
+            for node in ast.walk(ast.parse(pathlib.Path(p).read_text(encoding="utf-8"))):
                 names = []
                 if isinstance(node, ast.Import):
                     names = [a.name.split(".")[0] for a in node.names]
@@ -44,7 +45,7 @@ class Generic(unittest.TestCase):
         for p in files() + [os.path.join(os.path.dirname(PKG), "README.md")]:
             if not os.path.exists(p):
                 continue
-            text = open(p, encoding="utf-8").read()
+            text = pathlib.Path(p).read_text(encoding="utf-8")
             n = sum(bool(re.search(re.escape(t), text, re.I)) for t in terms)
             if n:
                 hits[os.path.basename(p)] = n

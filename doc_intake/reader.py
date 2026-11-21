@@ -213,22 +213,23 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
     sys.stderr.flush()
     pid = os.fork()
     if pid == 0:  # child
-        code = 0
+        # 3 unless the payload is written: anything raised on the way (MemoryError while pickling, a signal's
+        # KeyboardInterrupt) is dropped by os._exit in the finally, so nothing unwinds into the parent's code.
+        code = 3
         try:
             os.close(rfd)
             os.setsid()
             os.write(wfd, b"1" if cap_address_space(mem) else b"0")  # first byte: did the cap apply
             try:
-                payload = ("ok", fn(*args))
+                payload, result = ("ok", fn(*args)), 0
             except MemoryError:
-                payload, code = ("error", "too large"), 1
+                payload, result = ("error", "too large"), 1
             except Exception as e:  # noqa: BLE001 - only the type name goes back
-                payload, code = ("error", type(e).__name__), 1
+                payload, result = ("error", type(e).__name__), 1
             data = pickle.dumps(payload)
             with os.fdopen(wfd, "wb") as f:
                 f.write(data)
-        except BaseException:  # noqa: BLE001 - e.g. MemoryError while pickling
-            code = 3
+            code = result
         finally:
             os._exit(code)
     os.close(wfd)
@@ -265,7 +266,7 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
             # within that moment. ESRCH (nothing left) and EPERM (a group that isn't ours) are both ignored.
             os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
-            pass
+            pass  # nothing left to kill, or a group that isn't ours: see the note above
         _, status, ru = exited if isinstance(exited, tuple) else os.wait4(pid, 0)  # reap, after the kill
     data = b"".join(chunks)
     capped = {b"1": True, b"0": False}.get(data[:1])
@@ -360,7 +361,7 @@ def _drop(p):
     try:
         os.remove(p)
     except (OSError, TypeError):
-        pass
+        pass  # already gone, or no path: nothing to drop
 
 
 def ocr(image, notes):
@@ -456,8 +457,7 @@ class _HTMLText:
 def email_text(path, limit=MAX_TEXT_BYTES):
     """An email file (.eml) as one page: Subject, From and Date, then the plain-text body, or the HTML body as
     text. None when the file is not an email."""
-    import email
-    from email import policy
+    import email.policy  # binds email too
     try:
         if os.path.getsize(path) > limit:
             return None
@@ -469,7 +469,7 @@ def email_text(path, limit=MAX_TEXT_BYTES):
     if not re.match(r"[A-Za-z][A-Za-z0-9-]{1,60}:", head) or not re.search(
             r"(?im)^(?:from|subject|mime-version):", head):
         return None
-    msg = email.message_from_bytes(raw, policy=policy.default)
+    msg = email.message_from_bytes(raw, policy=email.policy.default)
     body = None
     for kind in ("plain", "html"):
         part = msg.get_body(preferencelist=(kind,))

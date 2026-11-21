@@ -23,6 +23,7 @@ from .config import CFG
 from .dates import document_date
 from .places import DocError, clean_part, inbox, inside, load_index, log_access, rel, root, save_index, state_dir
 from .places import write_private
+from .taskfiles import _amount, _load_task, resolve_output, task_summary, typed_records  # noqa: F401  (hosts too)
 
 from .scan import HELD, Uncapped, hold
 
@@ -98,34 +99,6 @@ def _apply_model(prof, wanted, cands, records, plans, dropped, src_of_page):
         want.discard((g, plan, field))
         added += 1
     return added
-
-
-def typed_records(prof, values):
-    types = fx.allowed_fields(prof)
-    return [{**v, "type": types.get((v["group"], v["field"]), "")} for v in values]
-
-
-def task_summary(t, prof=None):
-    """Counts only: documents, fields, missing (required), flagged values and documents, complete documents."""
-    try:
-        prof = prof or fx.load_profile(t["task"])
-    except fx.ProfileError:
-        prof = {"fields": [], "groups": {}}
-    required = {f["name"] for f in prof.get("fields", []) if f.get("required")}
-    docs_, flagged_docs, flagged, complete, req_missing = 0, 0, 0, 0, 0
-    for src in t.get("sources", []):
-        docs_ += 1
-        recs = typed_records(prof, [v for v in t["values"] if v.get("file") == src["file"]])
-        fl = fx.document_flags(recs)
-        flagged += len(fl)
-        flagged_docs += bool(fl)
-        have = {r["field"] for r in recs}
-        miss = required - have
-        req_missing += len(miss)
-        complete += not miss
-    return {"documents": docs_, "fields": len(t.get("values", [])), "missing": len(t.get("missing", [])),
-            "missing_required": req_missing, "flagged": flagged, "flagged_documents": flagged_docs,
-            "complete": complete}
 
 
 def _replace_target(old, task_name):
@@ -234,10 +207,18 @@ def label_words(before):
 
 
 _HEADER_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9-]{1,60}):")
+# Header names cmd_labels may print. Any other "Word:" line is document text (a name before a colon, say), so it
+# shows as "other" rather than the word itself.
+MAIL_HEADERS = {"received", "message-id", "from", "to", "cc", "bcc", "reply-to", "sender", "subject", "date",
+                "return-path", "delivered-to", "in-reply-to", "references", "mime-version", "content-type",
+                "content-transfer-encoding", "content-disposition", "dkim-signature", "authentication-results",
+                "arc-seal", "arc-message-signature", "arc-authentication-results", "received-spf", "list-unsubscribe",
+                "list-id", "precedence", "x-mailer", "x-originating-ip", "x-forwarded-to", "x-forwarded-for"}
 
 
 def mail_header_of(lines, i):
-    """The header name (Received, Message-ID, ...) when line i is in an email's header block, else None."""
+    """The header name (Received, Message-ID, ...) when line i is in an email's header block, else None. A name
+    outside MAIL_HEADERS comes back as "other": the name itself is never printed."""
     if not lines or not _HEADER_LINE.match(lines[0]):
         return None
     for j in range(i + 1):
@@ -246,7 +227,7 @@ def mail_header_of(lines, i):
     for j in range(i, -1, -1):
         m = _HEADER_LINE.match(lines[j])
         if m:
-            return m.group(1)
+            return m.group(1) if m.group(1).lower() in MAIL_HEADERS else "other"
     return None
 
 
@@ -507,24 +488,6 @@ def cmd_wrong(args, out=print):
 
 
 
-def resolve_output(name):
-    """A task JSON or an extract in the state folder."""
-    cands = [name] if os.path.isabs(name) else [os.path.join(state_dir("tasks"), name),
-                                                os.path.join(state_dir("extracts"), name),
-                                                os.path.join(root(), name), name]
-    for p in cands:
-        if os.path.isfile(p) and inside(p, os.path.join(root(), CFG.state)) and (
-                inside(p, state_dir("tasks")) or inside(p, state_dir("extracts"))):
-            kind = "task" if p.endswith(".json") else "extract"
-            return os.path.realpath(p), kind
-    raise DocError(f"no task file or extract named {name}")
-
-
-def _load_task(p):
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
-
-
 def _header(p):
     out = {}
     with open(p, encoding="utf-8") as f:
@@ -565,7 +528,7 @@ def approval_text(t, name):
                 g[1] += float(_amount(v.get("value")))
                 g[2] = True
             except ValueError:
-                pass
+                pass  # not a plain number: the group shows no total rather than a wrong one
     rows = [(g, n, f"{tot:,.2f}" if has else None) for g, (n, tot, has) in sorted(groups.items())]
     return approval.summary(f"{t.get('task', '?')} ({name})", "task", c["documents"], rows, c["flagged"])
 
@@ -856,10 +819,6 @@ def cmd_extract(args, out=print):
         uncapped.file_done()
     uncapped.note(out)
     return 0
-
-
-def _amount(v):
-    return re.sub(r"[$,\s]", "", v or "")
 
 
 def approved_task_for(digest, kinds=("receipt", "invoice")):

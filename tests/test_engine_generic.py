@@ -4,6 +4,7 @@ test host's own layout or settings (a host passes those in through configure()).
 tests/test_generic.py covers the import allowlist and a host's private terms; this adds the checks it lacks.
 """
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -40,7 +41,7 @@ def test_no_test_host_layout_or_settings_in_the_engine():
     for n in sorted(os.listdir(PKG)):
         if not n.endswith(".py"):
             continue
-        text = open(os.path.join(PKG, n), encoding="utf-8").read()
+        text = pathlib.Path(PKG, n).read_text(encoding="utf-8")
         k = sum(bool(re.search(p, text)) for p in patterns)
         if k:
             hits[n] = k

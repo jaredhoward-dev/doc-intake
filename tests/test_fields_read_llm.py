@@ -14,11 +14,11 @@ import time
 import pytest
 
 import host
-from doc_intake import fields as fx, llm, places, reader, similar, tasks
+from doc_intake import fields as fx, llm, places, similar, tasks
 from doc_intake.config import CFG
 from doc_intake.places import DocError
 from doc_intake.scan import DATE_NOTE
-from helpers import ACCOUNT, CARD, EIN, FAKES, ROUTING, SSN, drop, mode, rec, run  # noqa: F401  rec is a fixture
+from helpers import ACCOUNT, CARD, EIN, FAKES, ROUTING, SSN, drop, mode, run
 
 INBOX = host.INBOX
 STATE = host.STATE

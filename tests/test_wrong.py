@@ -9,7 +9,7 @@ import pytest
 
 import host
 from doc_intake import places, preview, tasks
-from helpers import ACCOUNT, FAKES, drop, rec, run  # noqa: F401  (rec is a fixture)
+from helpers import ACCOUNT, FAKES, drop, run
 
 TASKS = (host.STATE, "tasks")
 
