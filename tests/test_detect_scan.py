@@ -198,9 +198,25 @@ def test_card_among_random_digit_groups_is_always_covered():
 
 
 def test_twenty_digit_spaced_run_is_pinned():
-    # 4000 0000 0000 0000 0006: no 13-19 digit stretch passes Luhn, and the misread fallback needs the other groups
-    # under four digits, so nothing is found today (a known gap; the misread rule is the owner's call).
+    # 4000 0000 0000 0000 0006: no 13-19 digit stretch passes Luhn, and 0006 is neither short nor expiry-shaped
+    # (month 00), so the misread fallback leaves the run alone (a known gap, listed in docs/engine.md Limits).
     assert detect.find_spans("4000 0000 0000 0000 0006") == []
+
+
+@pytest.mark.parametrize("text,n", [("Card 4111 1111 1111 1112 1234", 1),  # 1234 reads as MMYY 12/34
+                                    ("4111 1111 1111 1112 2030", 1), ("4111 1111 1111 1112 0630 123", 1),
+                                    ("Exp 2030 4111 1111 1111 1112", 1),
+                                    ("4111 1111 1111 1112 5555 5555 5555 4443", 2)])
+def test_misread_card_beside_an_expiry_or_another_card_is_a_number(text, n):
+    assert detect.counts(detect.find_spans(text)) == {"long-number": n}
+    red, _ = detect.redact(text)
+    assert not re.search(r"\d{4}", red), red
+
+
+@pytest.mark.parametrize("text", ["2030-0042-0017-0003-0001", "2030-0042-0017-0003-0012", "1234-5678-9012-3456-2030",
+                                  "2030-1111-2222-3333-4444"])
+def test_five_group_ids_stay_clean(text):
+    assert detect.find_spans(text) == []  # no card issuer prefix, or a fifth group that isn't an expiry
 
 
 def test_ssn_rules():

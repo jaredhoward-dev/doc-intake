@@ -115,7 +115,63 @@ def _card_spans(text):
             b = _longest_stretch(raw, groups, range(lo, hi), hi, misread_ok)
             if b:
                 out.append((base + groups[b[0]][0], base + groups[b[1]][1], "long-number"))
+            else:
+                out.extend((base + groups[a][0], base + groups[z][1], "long-number")
+                           for a, z in _misread_tiling(raw, groups, lo, hi))
     return out
+
+
+_EXPIRY_GROUP = re.compile(r"^(?:(?:0[1-9]|1[0-2])\d\d|20\d\d)$")  # MMYY, or a year 20xx
+
+
+def _misread_tiling(raw, groups, lo, hi):
+    """[(i, j)] group ranges to hide as long-number when Luhn-failing card-grouped stretches sit beside 4-digit
+    groups. The gap must split into such stretches (each with a card issuer prefix) and other groups that are
+    shorter than four digits or expiry-shaped (MMYY, 20xx); an expiry group is hidden with the stretch before it
+    (or after it, at the start). Anything else beside them (2030-0042-0017-0003-0001) leaves the gap alone."""
+    best = {lo: (0, None)}  # k -> (digits in stretches, (previous k, tile))
+    for k in range(lo, hi):
+        if k not in best:
+            continue
+        score = best[k][0]
+        glen = groups[k][1] - groups[k][0]
+        text_k = raw[groups[k][0]:groups[k][1]]
+        moves = []
+        if glen < 4:
+            moves.append((k + 1, score, ("free", k, k)))
+        elif glen == 4 and _EXPIRY_GROUP.match(text_k):
+            moves.append((k + 1, score, ("expiry", k, k)))
+        n = 0
+        for j in range(k, hi):
+            n += groups[j][1] - groups[j][0]
+            if n > 19:
+                break
+            piece = raw[groups[k][0]:groups[j][1]]
+            digits = re.sub(r"\D", "", piece)
+            if (n >= 13 and _CARD_GROUPED.match(piece) and ("." not in piece or n >= 15)
+                    and card_prefix_ok(digits)):
+                moves.append((j + 1, score + n, ("stretch", k, j)))
+        for nk, sc, tile in moves:
+            if nk not in best or sc > best[nk][0]:
+                best[nk] = (sc, (k, tile))
+    if hi not in best or best[hi][0] == 0:
+        return []
+    tiles, k = [], hi
+    while k != lo:
+        k, tile = best[k][1]
+        tiles.append(tile)
+    tiles.reverse()
+    spans, pending = [], None
+    for kind, a, z in tiles:
+        if kind == "stretch":
+            spans.append([pending if pending is not None else a, z])
+            pending = None
+        elif kind == "expiry":
+            if spans and spans[-1][1] == a - 1:
+                spans[-1][1] = a
+            elif pending is None:
+                pending = a
+    return [tuple(sp) for sp in spans]
 
 
 _NINE = re.compile(r"(?<![\d-])\d{9}(?![\d-])")
