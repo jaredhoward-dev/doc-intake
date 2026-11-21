@@ -26,7 +26,8 @@ doc_intake.configure(
 digits and underscores, and the file name must match the profile's `"name"`.
 
 The known-senders map is not a profile. It can sit beside the profiles (as `profiles/senders.json` does) or
-anywhere else. Never pass it to `fields --task`.
+anywhere else. The engine never lists or loads the file `senders_file` names as a profile, whatever it is
+called, and `fields --task` refuses it by name.
 
 ## The top level
 
