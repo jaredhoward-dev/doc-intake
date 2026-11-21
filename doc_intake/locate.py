@@ -5,22 +5,16 @@ text leaves except the crops, with every detector region blacked out. Stdlib onl
 import os
 import tempfile
 
-from . import places, reader, snapshots as snap
+from . import fields as fx, places, reader, snapshots as snap
 from .places import root
 from .reader import IMAGE_TYPES, OCR_DPI, _drop, _pdf_info, page_dpi, prepare_image, render_page, sniff
 
 
 def _value_span(rec, pages):
     """rec's span on its page, or the first case-insensitive occurrence of its value there (known senders)."""
-    text = dict(pages).get(rec["page"], "")
     if rec.get("span"):
         return rec["span"]
-    v = rec.get("value") or ""
-    if len(v) >= 3:
-        i = text.lower().find(v.lower())
-        if i >= 0:
-            return [i, i + len(v)]
-    return None
+    return fx.value_spot(dict(pages).get(rec["page"], ""), None, rec.get("value"))
 
 
 def page_words(path, ftype, n, page_text, tmp):

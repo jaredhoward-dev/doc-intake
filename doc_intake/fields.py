@@ -44,6 +44,11 @@ Per-field options for forms laid out in fixed columns (the Closing Disclosure):
   label, and each figure goes to the column holding its centre. A box with two figures, or a figure within two
   characters of a column edge, gives nothing, so a figure never goes to a neighbour's header; a field whose header
   was found this way skips the value-below rule on that page (see _box_rows).
+
+Values the user marked wrong (tasks.cmd_wrong) come in as rejections (extract's "rejected"): Extraction.offer turns a
+rejected candidate away before it is ranked, so the next-best candidate for that field wins by the usual rules, and
+the rules that take only their first find (anywhere, top of page, a range, a link's month) go on to the next one. The
+text itself is never changed, so a rejection never moves another field's value (see is_rejected).
 """
 import datetime as dt
 import json
@@ -535,9 +540,49 @@ def _cells(text, base=0):
 
 
 # ---------------------------------------------------------------- the engine
+def value_spot(text, span, value):
+    """Where a value sits in its page's text: its span, else the first case-insensitive occurrence of a value of three
+    or more characters (a known sender's name, a top-of-page cell), else None."""
+    if span:
+        return list(span)
+    v = value or ""
+    if len(v) >= 3:
+        i = text.lower().find(v.lower())
+        if i >= 0:
+            return [i, i + len(v)]
+    return None
+
+
+def is_rejected(rec, rej, pages, ftype=None):
+    """True when rec (a record or a candidate: group, plan, row, field, page, label, value, span) is a value the user
+    marked wrong with rej (tasks.cmd_wrong: the same keys and the spot, never the value). Either:
+    - the same candidate: the same field, page and matched label, at an overlapping spot (rec's span, or where its
+      value first appears on the page; a rejection or record with no spot matches on the rest, as a known sender
+      whose name is not printed does); or
+    - the same value: the same field (group, plan, row, name) holding what the rejected spot reads, normalized as the
+      field's type (ftype) normalizes it, whatever label or spot reached it ("Grand total" and "Total" on one line,
+      or the same wrong total printed twice).
+    The rejected value is read back from the page at its spot, so the task file never needs to store it."""
+    if any(rec.get(k) != rej.get(k) for k in ("group", "plan", "row", "field")):
+        return False
+    texts = dict(pages)
+    b = rej.get("span")
+    if rec.get("page") == rej.get("page") and rec.get("label") == rej.get("label"):
+        a = value_spot(texts.get(rec.get("page"), ""), rec.get("span"), rec.get("value"))
+        if not a or not b or (a[0] < b[1] and b[0] < a[1]):
+            return True
+    if not b or ftype is None:
+        return False
+    text = texts.get(rej.get("page"), "")
+    was = normalize(ftype, text[b[0]:b[1]]) if 0 <= b[0] < b[1] <= len(text) else ""
+    return bool(was) and was.casefold() == str(rec.get("value") or "").casefold()
+
+
 class Extraction:
-    def __init__(self, prof):
+    def __init__(self, prof, rejected=(), pages=()):
         self.prof = prof
+        self.rejected = list(rejected)  # values the user marked wrong (is_rejected): never kept, so the next one wins
+        self.pages = list(pages)
         self.allowed = allowed_fields(prof)
         self.values = {}      # (group, plan, row, field) -> record
         self.dropped = {}     # kind -> count
@@ -548,6 +593,8 @@ class Extraction:
         self.dropped_at = set()  # spans already counted in dropped: one sensitive value counts once
 
     def offer(self, group, plan, row, field, ftype, value, page, label, src, span=None, spans=(), rank=0, order=0):
+        """Consider one candidate value; keep it when it beats the field's current one. Returns False only when the
+        user marked this value wrong (a rejection), so a rule that takes its first find goes on to the next."""
         if (group, field) not in self.allowed:
             return  # allowlist: never a field the profile doesn't name
         if span and any(span[0] < e and s < span[1] for s, e, _, _ in spans):
@@ -561,6 +608,10 @@ class Extraction:
             return
         if (group, field) in self.doc_dates and not plausible_document_date(value):
             rank += 200  # a far-future date only when no nearer one is found (the preview flags it)
+        cand = {"group": group, "plan": plan, "row": row, "field": field, "page": page, "label": label,
+                "value": value, "span": list(span) if span else None}
+        if any(is_rejected(cand, r, self.pages, ftype) for r in self.rejected):
+            return False  # marked wrong: never kept, so the runner-up wins
         kind = sensitive(value, label)
         if kind:
             self.dropped[kind] = self.dropped.get(kind, 0) + 1
@@ -628,10 +679,11 @@ def _heading(prof, line, fields):
     return named or out[:1]
 
 
-def extract(prof, pages, src, keep_span=False):
+def extract(prof, pages, src, keep_span=False, rejected=()):
     """pages: [(page number, raw text)]. Returns (records, dropped counts, plans). keep_span: each record also
-    carries "span" (see Extraction.records)."""
-    ex = Extraction(prof)
+    carries "span" (see Extraction.records). rejected: values the user marked wrong (tasks.cmd_wrong's rejections,
+    see is_rejected); none is ever returned, and each field takes its next-best candidate instead."""
+    ex = Extraction(prof, rejected, pages)
     fields = _compile(prof)
     groups = prof.get("groups", {})
     default = prof.get("default_group") or next(iter(groups))
@@ -675,10 +727,13 @@ def extract(prof, pages, src, keep_span=False):
                         or hit
                     if f["anywhere"] == "earliest":  # a contract's date comes before its first payment's
                         hit = sorted(hit, key=lambda h: parse_date(h[2]) or "9999")
-                if hit:
-                    s, e, v = hit[0]
-                    ex.offer(f["group"], None, None, f["name"], f["type"], v, pno, "anywhere", src, (s, e), spans,
-                             rank=99, order=0)
+                taken = False
+                for s, e, v in hit:  # the first hit, or the next when the user marked it wrong
+                    if ex.offer(f["group"], None, None, f["name"], f["type"], v, pno, "anywhere", src, (s, e), spans,
+                                rank=99, order=0) is not False:
+                        taken = True
+                        break
+                if taken:
                     break
             if f["type"] == "currency" and not any(r["field"] == f["name"] for r in ex.values.values()):
                 if any("$" in t for _, t in pages):
@@ -701,9 +756,9 @@ def extract(prof, pages, src, keep_span=False):
                             r"receipt|invoice|welcome|thank|order|transaction|store\s*#|tel|phone|www\.|http|page"
                             r"|^(?:sub\s*-?\s*)?total\b|^amount\b|^balance\b|^tax\b|^date\b|^bill\s+to\b",
                             s, re.I):
-                        ex.offer(f["group"], None, None, f["name"], f["type"], s.title() if s.isupper() else s,
-                                 pno, "top of page", src, rank=98)
-                        break
+                        if ex.offer(f["group"], None, None, f["name"], f["type"], s.title() if s.isupper() else s,
+                                    pno, "top of page", src, rank=98) is not False:
+                            break  # else the user marked it wrong: the next line's first cell
     for f in fields:
         if f.get("name_date"):
             _name_date(ex, f, pages, src)
@@ -735,9 +790,9 @@ def _link_month(ex, f, pages, src):
                 continue
             day = dt.date(y, mo, 1) if f["link_month"] == 0 else \
                 dt.date(y + mo // 12, mo % 12 + 1, 1) - dt.timedelta(days=1)
-            ex.offer(f["group"], None, None, f["name"], "date", day.isoformat(), pno, "month in a link", src,
-                     None, (), rank=50, order=0)
-            return
+            if ex.offer(f["group"], None, None, f["name"], "date", day.isoformat(), pno, "month in a link", src,
+                        None, (), rank=50, order=0) is not False:
+                return
 
 
 def _name_date(ex, f, pages, src):
@@ -768,9 +823,9 @@ def _range(ex, f, pages, src):
                 val, span = (start, r.span(1)) if f["range"] == 0 else (end, r.span(3))
                 if val:
                     spans = detect.find_spans(text)
-                    ex.offer(f["group"], None, None, f["name"], "date", val, pno, m.group(0).lower(), src, span,
-                             spans, rank=-1, order=0)
-                    return
+                    if ex.offer(f["group"], None, None, f["name"], "date", val, pno, m.group(0).lower(), src, span,
+                                spans, rank=-1, order=0) is not False:
+                        return
 
 
 _WORD = re.compile(r"\S+")
