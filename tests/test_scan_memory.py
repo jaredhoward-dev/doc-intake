@@ -1,9 +1,9 @@
 """Bounded memory in the engine: the per-file child limit, streaming reads, page-by-page OCR and --profile-mem.
 
 Through the fake host (tests/host.py) against a throwaway records root; every document here is made up. The
-bounded child relies on RLIMIT_AS, which only Linux lets a process lower, so the tests that assert the cap bites
-are skipped elsewhere (CI runs them on Ubuntu); the rest run the real fork with that one limit left out on macOS
-(macos_rlimit)."""
+bounded child's memory cap is RLIMIT_AS, which only Linux lets a process lower, so the tests that assert the cap
+bites are skipped elsewhere (CI runs them on Ubuntu); the rest run the real fork everywhere, and on macOS the
+engine itself runs the child without that one cap (reader.cap_address_space)."""
 import hashlib
 import json
 import os
@@ -23,7 +23,7 @@ SENTINEL = "zebrafinch quartzlamp"
 
 cap_bites = pytest.mark.skipif(not sys.platform.startswith("linux"),
                                reason="asserts the memory cap stops a read: RLIMIT_AS, which only Linux lets a "
-                                      "process lower (macOS raises ValueError)")
+                                      "process lower (macOS refuses it and runs uncapped)")
 
 
 def put(root, relp, data):
@@ -47,6 +47,48 @@ def hog(*_a, **_k):
 def test_run_bounded_returns_the_value():
     value, info = reader.run_bounded(lambda a, b: a + b, 2, 3, mem_mb=512, timeout=30)
     assert value == 5 and info["ok"] and info["reason"] is None and info["peak_rss_mb"] > 0
+
+
+def refuse_rlimit_as(monkeypatch, exc=ValueError):
+    """setrlimit as on macOS: RLIMIT_AS raises (ValueError by default), every other limit is real."""
+    real = reader.resource.setrlimit
+
+    def setrlimit(which, limits):
+        if which == reader.resource.RLIMIT_AS:
+            raise exc("current limit exceeds maximum limit")
+        return real(which, limits)
+    monkeypatch.setattr(reader.resource, "setrlimit", setrlimit)
+
+
+def test_cap_address_space_reports_a_refused_cap(monkeypatch):
+    refuse_rlimit_as(monkeypatch)
+    assert reader.cap_address_space(256 << 20) is False
+
+
+def test_cap_address_space_does_not_swallow_other_errors(monkeypatch):
+    refuse_rlimit_as(monkeypatch, exc=OSError)
+    with pytest.raises(OSError):
+        reader.cap_address_space(256 << 20)
+
+
+def test_run_bounded_reads_without_the_cap_where_refused(monkeypatch):
+    refuse_rlimit_as(monkeypatch)
+    value, info = reader.run_bounded(lambda a, b: a * b, 6, 7, mem_mb=256, timeout=30)
+    assert value == 42 and info["ok"] and info["reason"] is None
+    value, info = reader.run_bounded(time.sleep, 30, mem_mb=256, timeout=1)  # the timeout still holds
+    assert value is None and info["reason"] == "timeout"
+
+
+@pytest.mark.parametrize("platform, maxrss", [("darwin", 300 << 20), ("linux", 300 << 10)])
+def test_maxrss_is_converted_per_platform(monkeypatch, platform, maxrss):
+    monkeypatch.setattr(sys, "platform", platform)
+    assert reader.maxrss_mb(maxrss) == 300.0 == fingerprints._mb(maxrss)
+    assert reader.maxrss_mb(maxrss + maxrss // 600) == 300.5
+
+
+def test_run_bounded_peak_rss_is_plausible_megabytes():
+    _, info = reader.run_bounded(lambda: len(bytearray(64 << 20)), mem_mb=1024, timeout=30)
+    assert 64 <= info["peak_rss_mb"] < 1024
 
 
 @cap_bites

@@ -81,8 +81,9 @@ def file_text_fp(path):
     return file_fp_info(path)["fp"]
 
 
-def _mb(kb):
-    return round(kb / 1024, 1)
+def _mb(maxrss):
+    """A ru_maxrss value in MB (reader.maxrss_mb: bytes on macOS, KB on Linux)."""
+    return reader.maxrss_mb(maxrss)
 
 
 def profile_line(relp, size, ftype, pages, method, info, result):
