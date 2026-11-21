@@ -20,6 +20,7 @@ import shutil
 
 import pytest
 
+import doc_intake
 from doc_intake import reader
 from helpers import rec, run  # noqa: F401  (rec is a fixture)
 
@@ -27,6 +28,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(HERE, "fixtures", "golden", "records")
 EXPECTED = os.path.join(HERE, "fixtures", "golden", "expected")
 STAMP = dt.datetime(2030, 1, 1, 12, 0, 0).timestamp()  # every fixture file's mtime: "date from file" is stable
+# The engine's "today" for judging document dates (config.today), so the run doesn't drift with the calendar. Late
+# 2029 puts the fixture's January dates within 60 days and its February and March dates past that: the run pins
+# both a plausible date and a flagged one. File names and timestamps stay on the real clock (<TODAY>, <NOW>).
+TODAY = dt.date(2029, 12, 1)
 
 
 
@@ -141,6 +146,7 @@ def golden_outputs(root, capsys):
 
 
 def test_golden_run(rec, capsys):
+    doc_intake.configure(today=lambda: TODAY)  # fresh_config (conftest) puts the real calendar back afterwards
     got = golden_outputs(rec, capsys)
     today = dt.date.today().isoformat()
     got = {k.replace(os.sep, "_").replace(today, "TODAY"): v for k, v in got.items()}
@@ -161,3 +167,7 @@ def test_golden_run(rec, capsys):
     tasks = [json.loads(v) for k, v in want.items() if k.startswith("11-task-")]
     assert sum(t["approved"] is True for t in tasks) == 3 and len(tasks) == 4
     assert "golden test" in want["12-state-access.log"]
+    # dates are judged against the pinned TODAY: some within 60 days of it, some past that and flagged
+    detail = want["08-status-detail"]
+    assert re.search(r"(?m)^receipt-\S+: .*flagged date: outside 2000 to 60 days from today \(2\)", detail)
+    assert re.search(r"(?m)^paystub-\S+: .*; flagged none;", detail)

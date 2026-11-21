@@ -1,6 +1,6 @@
 $ host.py preview --html --no-open paystub-<TODAY>.json
 rc=0
 --- stdout
-wrote .doc-intake/previews/paystub-<TODAY>.html: 1 documents, 1 complete, 1 flagged; 1 cards open to check (a value looks wrong 1), 0 collapsed; values shown as line 17, without a location 0 (it holds values: only the user opens it)
+wrote .doc-intake/previews/paystub-<TODAY>.html: 1 documents, 1 complete, 0 flagged; 1 cards open to check (first of its vendor 1), 0 collapsed; values shown as line 17, without a location 0 (it holds values: only the user opens it)
 tip: open it in a private window: firefox --private-window "<ROOT>/.doc-intake/previews/paystub-<TODAY>.html"
 --- stderr

@@ -1,6 +1,6 @@
 $ host.py preview --html --no-open invoice-<TODAY>.json
 rc=0
 --- stdout
-wrote .doc-intake/previews/invoice-<TODAY>.html: 2 documents, 2 complete, 2 flagged; 2 cards open to check (a value looks wrong 2, pair total differs 1), 0 collapsed; values shown as line 9, none 2, without a location 0 (it holds values: only the user opens it)
+wrote .doc-intake/previews/invoice-<TODAY>.html: 2 documents, 2 complete, 1 flagged; 2 cards open to check (a value looks wrong 1, first of its vendor 1, pair total differs 1), 0 collapsed; values shown as line 9, none 2, without a location 0 (it holds values: only the user opens it)
 tip: open it in a private window: firefox --private-window "<ROOT>/.doc-intake/previews/invoice-<TODAY>.html"
 --- stderr

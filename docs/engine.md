@@ -73,6 +73,7 @@ Example profiles and a fake known-senders map are in `profiles/` (`receipt.json`
 `senders.json`); [profiles.md](profiles.md) describes the profile format.
 
 ```python
+import datetime
 import engine
 from engine import scan
 
@@ -84,6 +85,7 @@ engine.configure(
     route=my_route,                            # where a screened document goes (see config.py)
     model=lambda: "",                          # a local model's name, or "" for none
     privacy_terms=lambda: [],                  # words a model-made title must never contain
+    today=datetime.date.today,                 # the date document dates are judged against (the default)
 )
 scan.cmd_scan(args)
 ```
@@ -91,6 +93,14 @@ scan.cmd_scan(args)
 The known-senders map may sit in the profiles folder under any name: the file `senders_file` names is never listed
 as a profile, and `fields --task <its name>` is refused. A file named `vendors.json` there is skipped too, for a
 host that keeps the map under that name without configuring `senders_file`.
+
+`today` is a function returning the `datetime.date` that document dates are judged against: a date more than 60
+days after it is passed over for a document's date when there is another, and is flagged on the review page (a
+loan's maturity or a payment's due date may be up to ten years ahead), and `fields --labels` calls it far. It
+defaults to the real calendar; a test or a replay pins it (`today=lambda: datetime.date(2030, 2, 1)`) so the outcome
+doesn't drift as the real date nears the documents' dates. It never fakes when something happened: task files'
+`created` and `superseded_at`, the access log, the date in a task file's name, index dates and cleanup's ages stay
+on the real clock. Like the other hooks it is not type-checked: a non-callable fails when a date is first judged.
 
 `route(path, ftype, redacted_text, title_fn=None, **opts)` returns a dict with `category`, `profile`, `dest`,
 `name`, `note`, `date_from_file` and `name_from_model`. It sees only redacted text. Hosts register their own value

@@ -3,7 +3,7 @@
  "badges": [
   "1 flagged",
   "1 flagged",
-  "1 flagged"
+  "complete"
  ],
  "cards": 3,
  "check_warn": 0,
