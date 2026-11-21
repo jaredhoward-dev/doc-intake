@@ -1,0 +1,95 @@
+{
+ "description": "Fake known senders for the tests: every vendor, domain and lender here is made up (.test domains). Same shape as a host's map: checked in order, the first match wins; header_lines limits a vendor to the first lines of page 1; kind marks a lender or dealer; capture takes the name from the pattern's first group; book and category are review-page suggestions only.",
+ "vendors": [
+  {
+   "name": "Example Cloud Marketplace",
+   "domains": [
+    "marketplace.example-cloud.test"
+   ],
+   "patterns": [
+    "\\bexample\\s+cloud\\s+marketplace\\b"
+   ],
+   "header_lines": 15,
+   "book": "business",
+   "category": "software_saas"
+  },
+  {
+   "name": "Example Cloud",
+   "domains": [
+    "example-cloud.test"
+   ],
+   "patterns": [
+    "\\bexample\\s+cloud\\s+services\\b"
+   ],
+   "book": "business",
+   "category": "hosting"
+  },
+  {
+   "name": "Sample Software",
+   "domains": [
+    "sample-software.test"
+   ],
+   "patterns": [
+    "\\bsample\\s+software\\b"
+   ],
+   "book": "business",
+   "category": "software_saas"
+  },
+  {
+   "name": "Demo Print Shop",
+   "domains": [
+    "demo-print.test"
+   ],
+   "patterns": [
+    "\\bdemo\\s+print\\s+shop\\b"
+   ],
+   "book": "business",
+   "category": "office"
+  },
+  {
+   "name": "Example Water Utility",
+   "domains": [
+    "example-water.test"
+   ],
+   "patterns": [
+    "\\bexample\\s+water\\b"
+   ],
+   "book": "rental",
+   "category": "utilities"
+  },
+  {
+   "name": "Example Motor Credit",
+   "domains": [
+    "example-motor-credit.test"
+   ],
+   "kind": "lender",
+   "patterns": [
+    "\\bexample\\s+motor\\s+credit(?:\\s+corp(?:oration|\\.)?)?\\b"
+   ]
+  },
+  {
+   "name": "dealer pattern",
+   "kind": "dealer",
+   "capture": true,
+   "patterns": [
+    "(?<![A-Za-z])((?:(?!(?:Financial|Finance|Credit|Motor\\s+Credit|Insurance|Bank|Seller|Creditor|Seller-Creditor|Buyer|Co-Buyer|Dealer|Assigned|Assignee|Lender|Name|Address|The|By|To)\\b)[A-Z][A-Za-z'&.-]* ){0,3}(?:Toyota|Lexus|Ford|Chevrolet|Chevy|GMC|Ram|Dodge|Jeep|Chrysler|Honda|Acura|Nissan|Infiniti|Subaru|Mazda|Mitsubishi|Hyundai|Kia|Genesis|Volkswagen|VW|Audi|BMW|Mini|Mercedes-Benz|Porsche|Volvo|Buick|Cadillac|Lincoln|Land\\s+Rover|Jaguar|Auto(?:motive)?|Motors|Automall|Auto\\s+Group)(?: (?:of|at|on) [A-Z][A-Za-z.-]+(?: [A-Z][A-Za-z.-]+)?)?,? (?:Inc|LLC|L\\.L\\.C|Corp|Co|Ltd|LP)\\b\\.?)"
+   ]
+  }
+ ],
+ "events": {
+  "markers": [
+   "\\bevent\\s+cost\\b",
+   "\\bregistration\\s+(?:id|fee|confirmation)\\b",
+   "\\bentry\\s+fee\\b"
+  ],
+  "heading": "\\b(?:marathon|half\\s+marathon|[0-9]+k|race|run|walk|triathlon|duathlon|relay|trail|fun\\s+run|ride|classic|challenge)\\b"
+ },
+ "stripe": {
+  "markers": [
+   "\\bstripe\\b",
+   "\\bdate\\s+of\\s+issue\\b.*\\n(?:.*\\n){0,12}.*\\bbill\\s+to\\b",
+   "\\breceipt\\s+number\\b"
+  ],
+  "bill_to": "\\bbill\\s+to\\b"
+ }
+}

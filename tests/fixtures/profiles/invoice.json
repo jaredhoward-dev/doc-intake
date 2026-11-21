@@ -1,0 +1,161 @@
+{
+ "name": "invoice",
+ "description": "A vendor invoice or bill: who, when, which period, how much. Only the invoice number, never account or customer IDs.",
+ "never": [
+  "account numbers",
+  "customer IDs",
+  "card numbers",
+  "names",
+  "addresses"
+ ],
+ "default_group": "invoice",
+ "groups": {
+  "invoice": {
+   "global": true
+  }
+ },
+ "fields": [
+  {
+   "group": "invoice",
+   "name": "vendor",
+   "type": "org_name",
+   "labels": [
+    "from",
+    "vendor",
+    "bill from"
+   ],
+   "from": "top",
+   "known_vendor": true,
+   "required": true,
+   "label_at_cell_start": true
+  },
+  {
+   "group": "invoice",
+   "name": "invoice_date",
+   "type": "date",
+   "labels": [
+    "invoice date",
+    "date of issue",
+    "issue date",
+    "bill date",
+    "statement date",
+    "date issued",
+    "date",
+    [
+     "invoice summary",
+     0
+    ]
+   ],
+   "anywhere": true,
+   "required": true,
+   "document_date": true,
+   "name_date": true
+  },
+  {
+   "group": "invoice",
+   "name": "period_start",
+   "type": "date",
+   "labels": [
+    "billing period",
+    "service period",
+    "invoice period",
+    "statement period",
+    "period start",
+    "period from",
+    "service from"
+   ],
+   "range": 0,
+   "link_month": 0
+  },
+  {
+   "group": "invoice",
+   "name": "period_end",
+   "type": "date",
+   "labels": [
+    [
+     "billing period",
+     1
+    ],
+    [
+     "service period",
+     1
+    ],
+    [
+     "invoice period",
+     1
+    ],
+    [
+     "statement period",
+     1
+    ],
+    "period end",
+    "period to",
+    "service to",
+    "through"
+   ],
+   "range": 1,
+   "link_month": 1
+  },
+  {
+   "group": "invoice",
+   "name": "total",
+   "type": "money",
+   "labels": [
+    "amount due",
+    "total due",
+    "balance due",
+    "invoice total",
+    "total amount",
+    "total"
+   ],
+   "not": [
+    "subtotal",
+    "sub total",
+    "sub-total",
+    "previous",
+    "past due"
+   ],
+   "required": true
+  },
+  {
+   "group": "invoice",
+   "name": "tax",
+   "type": "money",
+   "labels": [
+    "sales tax",
+    "tax",
+    "vat",
+    "gst"
+   ],
+   "not": [
+    "pre-tax",
+    "tax id",
+    "before tax",
+    "tax exempt"
+   ]
+  },
+  {
+   "group": "invoice",
+   "name": "currency",
+   "type": "currency",
+   "labels": [
+    "currency"
+   ],
+   "anywhere": true
+  },
+  {
+   "group": "invoice",
+   "name": "invoice_number",
+   "type": "ref",
+   "labels": [
+    "invoice number",
+    "invoice no",
+    "invoice #",
+    "inv #",
+    "inv no",
+    "invoice"
+   ],
+   "exclusive_label": true
+  }
+ ]
+}

@@ -1,5 +1,5 @@
-# Unit tests on synthetic documents only. Python comes from Ubuntu's apt
-# packages (stdlib only: no pip, no unpinned downloads); poppler-utils and
+# Unit tests on synthetic documents only. Python and pytest come from Ubuntu's
+# apt packages (no pip, no unpinned downloads); poppler-utils and
 # tesseract are the optional system tools the reader uses. `CI gate` is the
 # single check to require on main.
 name: ci
@@ -28,9 +28,9 @@ jobs:
       - name: System packages
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends poppler-utils tesseract-ocr
+          sudo apt-get install -y -qq --no-install-recommends poppler-utils tesseract-ocr python3-pytest
       - name: Unit tests
-        run: python3 -I -m unittest discover -s tests -t . -v
+        run: python3 -I -m pytest -q tests
 
   gate:
     name: CI gate
