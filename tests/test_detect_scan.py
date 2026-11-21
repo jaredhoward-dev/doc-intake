@@ -270,9 +270,46 @@ def test_card_partly_inside_a_higher_priority_span_is_still_hidden():
     # 618-91-5555 reads as an SSN first (found by the fuzz test); the card digits outside it are hidden as well
     red, c = detect.redact("Ref 384.932.618-91-5555.5555-5555.4444.062 end")
     assert c == {"ssn": 1, "card": 1} and red == "Ref 384.932.[SSN].[CARD-last4:4444].062 end"
-    # the SSN takes the end of a 19-digit card: the head piece is still counted as a card but shows no last four
+    # the SSN takes the end of a 19-digit card: the head piece is the card's last piece, so it is the card (counted
+    # once), but it doesn't end where the card ends, so its tag shows no digits
     red, c = detect.redact("Ref 4000 0000 0000 0000 006-12-3456 end")
-    assert c == {"card": 1, "ssn": 1} and red == "Ref [NUMBER] [SSN] end"
+    assert c == {"card": 1, "ssn": 1} and red == "Ref [CARD] [SSN] end"
+
+
+def _luhn_complete(partial):
+    return next(partial + d for d in "0123456789" if detect.luhn_ok(partial + d))
+
+
+def test_card_cut_in_the_middle_counts_once():
+    rng = random.Random(4019)
+    for _ in range(50):
+        ssn = rng.choice(["234", "345", "456"]) + "-" + rng.choice(["12", "34", "56"]) + "-" + str(rng.randint(1000, 9999))
+        head = "4" + "".join(rng.choice("0123456789") for _ in range(3))
+        tail = "".join(rng.choice("0123456789") for _ in range(5))
+        card = _luhn_complete(head + ssn.replace("-", "") + tail)  # a 19-digit Visa
+        assert detect.is_card(card)
+        text = f"Ref {card[:4]} {ssn} {card[13:16]} {card[16:]} end"  # dddd ddd-dd-dddd ddd ddd
+        spans = detect.find_spans(text)
+        assert detect.counts(spans) == {"card": 1, "ssn": 1, "long-number": 1}, text
+        digits = [k for k, ch in enumerate(text) if ch.isdigit()]
+        assert all(any(s <= k < e for s, e, _, _ in spans) for k in digits), text
+        tags = [tag for _, _, kind, tag in spans if kind in ("card", "long-number")]
+        assert tags == ["[NUMBER]", f"[CARD-last4:{card[-4:]}]"], text  # last four only on the final piece
+    # a final piece under four digits shows no digits at all, so none hidden under the SSN leak through the tag
+    card = _luhn_complete("4123" + "234" + "56" + "7890" + "12")  # a 16-digit Visa
+    red, c = detect.redact(f"Ref {card[:4]} {card[4:7]}-{card[7:9]}-{card[9:13]} {card[13:]} end")
+    assert c == {"card": 1, "ssn": 1, "long-number": 1} and red == "Ref [NUMBER] [SSN] [CARD] end"
+
+
+def test_clip_leaves_no_digit_two_cards():
+    glued = "618" + "-91-" + "5555"
+    cards = ["5555-5555-5555-4444", "4012-8888-8888-1881"]
+    text = "Ref " + ".".join([glued, cards[0], glued, cards[1], glued]) + " end"
+    spans = detect.find_spans(text)
+    digits = [k for k, ch in enumerate(text) if ch.isdigit()]
+    assert all(any(s <= k < e for s, e, _, _ in spans) for k in digits), detect.redact(text)[0]
+    red, _ = detect.redact(text)
+    assert not any(ch.isdigit() for ch in re.sub(r"\[CARD-last4:\d{4}\]", "", red)), red
 
 
 @pytest.mark.parametrize("text", ["2030 0042 0017 0003 0001", "1234-5678-9012-3456-7890"])
