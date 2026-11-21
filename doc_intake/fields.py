@@ -24,6 +24,9 @@ Per-field options for forms laid out in fixed columns (the Closing Disclosure):
   like "each" ones, never take a value from the lines below (a blank row would take the next row's);
 - a label given as [text, "line"] owns the rest of its line, past other labels on it, and needs no cell start
   ("| Buyer Signs X Date 07/11/2030" in a scanned box: the signature line's date, where "Date" alone is no label);
+  with no value on its line it takes the nearest one within two non-empty lines above or below, never on or past
+  another "line" label's line (an e-signature stamp is taller than a line of text, so its date can sit just above or
+  below; the seller's line below must not give the buyer's date), ahead of the next label but behind its own line's;
 - "each": true keeps every matching line as its own row (several "Title -" charges), not just the first;
 - "anywhere": "earliest" (dates) falls back to the earliest plausible date in the text, not the first one;
 - "link_month": 0 or 1 (dates) takes the first or last day of the month a link's query names ("...?year=2030&month=9",
@@ -33,7 +36,13 @@ Per-field options for forms laid out in fixed columns (the Closing Disclosure):
 - "below_lines": n looks for the value in up to n non-empty lines below the label instead of three (the Truth in
   Lending boxes of a retail installment contract put a sentence between the label and its figure); with
   "below_values_only": true, a line below counts only when its part in the label's column holds nothing but values
-  (the box's sentence can hold a figure of its own: "including your down payment of $500.00").
+  (the box's sentence can hold a figure of its own: "including your down payment of $500.00");
+- "box_row": true (on a field, or on a group for all its fields) reads a row of boxes whose figures sit on one line
+  under headers wrapped over several lines, as OCR gives the Truth in Lending boxes with every line's columns a few
+  characters off: the header block's widest line sets the columns, each field takes the column whose text holds its
+  label, and each figure goes to the column holding its centre. A box with two figures, or a figure within two
+  characters of a column edge, gives nothing, so a figure never goes to a neighbour's header; a field whose header
+  was found this way skips the value-below rule on that page (see _box_rows).
 """
 import datetime as dt
 import json
@@ -631,6 +640,7 @@ def extract(prof, pages, src, keep_span=False):
             offs.append(o)
             o += len(ln) + 1
         cuts = _column_cuts(fields, lines)
+        boxed = _box_rows(ex, fields, groups, lines, offs, pno, src, spans)
         for i, line in enumerate(lines):
             if not line.strip():
                 continue
@@ -647,7 +657,7 @@ def extract(prof, pages, src, keep_span=False):
                                      rank=0, order=order)
                 continue
             order += 1
-            _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, cuts)
+            _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, cuts, boxed)
         for t in prof.get("tables", []):
             _table(ex, t, lines, offs, pno, src, spans)
     for f in fields:
@@ -758,6 +768,98 @@ def _range(ex, f, pages, src):
                     return
 
 
+_WORD = re.compile(r"\S+")
+
+
+def _box_rows(ex, fields, groups, lines, offs, pno, src, spans):
+    """"box_row" fields (or every field of a group with "box_row": true): a row of boxes, each a header (wrapped over
+    a few lines, then a sentence) with its figure at the bottom, as the Truth in Lending boxes print. OCR's columns
+    drift a few characters from line to line, so the value-below rule's fixed window misses or crosses them.
+
+    A figures line is one of two or more cells, every cell a value of a box field's type. Its header block is the
+    run of non-empty lines just above it (blank lines between the two are skipped; a blank line inside the block,
+    another figures line, or eight lines end it). The block's line with the most cells (the topmost of those) sets
+    the columns, split halfway across the gaps between its cells; every word of the block goes to the column holding
+    its centre, and each field takes the column whose text matches its best label (earliest label, then nearest the
+    top; one field per column). Each figure goes to the column holding its centre. A column given two figures, or a
+    figure within two characters of a column edge, gives nothing: a figure is never assigned to its neighbour's
+    header. Returns the names of the fields whose header was found here: their value-below rule is skipped."""
+    box = [f for f in fields if f.get("box_row") or groups.get(f["group"], {}).get("box_row")]
+    if not box:
+        return set()
+    types = {f["type"] for f in box}
+
+    def figures(line):
+        cells = _cells(line)
+        if len(cells) < 2 or not all(any(_FULL[t].fullmatch(c[2].strip()) for t in types) for c in cells):
+            return None
+        return cells
+
+    claimed = set()
+    for i, line in enumerate(lines):
+        figs = figures(line)
+        if not figs:
+            continue
+        j = i - 1
+        while j >= 0 and not lines[j].strip():
+            j -= 1
+        block = []
+        while j >= 0 and lines[j].strip() and len(block) < 8 and not figures(lines[j]):
+            block.insert(0, j)
+            j -= 1
+        if not block:
+            continue
+        top = max(block, key=lambda k: (len(_cells(lines[k])), -k))
+        heads = _cells(lines[top])
+        if len(heads) < 2:
+            continue
+        edges = [(a[1] + b[0]) / 2 for a, b in zip(heads, heads[1:])]
+
+        def column(centre):
+            """The column holding centre, or None within two characters of an edge."""
+            if any(abs(centre - e) <= 2 for e in edges):
+                return None
+            return sum(centre > e for e in edges)
+
+        texts = [[] for _ in heads]
+        for k in block:
+            for m in _WORD.finditer(lines[k]):
+                col = sum((m.start() + m.end()) / 2 > e for e in edges)
+                texts[col].append(m.group(0))
+        texts = [" ".join(t) for t in texts]
+        cands = []
+        for n, f in enumerate(box):
+            for rank, _, _, rx in f["_labels"]:
+                for col, t in enumerate(texts):
+                    m = rx.search(t)
+                    if m:
+                        cands.append((rank, m.start(), n, col))
+        owner = {}
+        for rank, _, n, col in sorted(cands):
+            if col not in owner and n not in owner.values():
+                owner[col] = n
+        placed = {}
+        for c in figs:
+            col = column((c[0] + c[1]) / 2)
+            if col is not None:
+                placed.setdefault(col, []).append(c)
+        for col, n in owner.items():
+            f = box[n]
+            claimed.add(f["name"])
+            got = placed.get(col, [])
+            if len(got) != 1:
+                continue  # an empty box, or two figures under one header: nothing
+            c = got[0]
+            vals = _typed(f["type"], c[2])
+            if len(vals) == 1 and vals[0][2] == c[2].strip():
+                rank, label = next((r, text) for r, text, _, rx in f["_labels"] if rx.search(texts[col]))
+                s, e, v = vals[0]
+                # behind a value on the label's own line, ahead of the value-below rule's
+                ex.offer(f["group"], None, None, f["name"], f["type"], v, pno, label, src,
+                         (offs[i] + c[0] + s, offs[i] + c[0] + e), spans, rank + 25, 0)
+    return claimed
+
+
 def _hits(fields, groups, current, line):
     """Label hits on a line: [(start, end, [(field, label, idx, rank)])], overlaps resolved (longest wins)."""
     cur_groups = {g for g, _ in current}
@@ -813,7 +915,7 @@ def _column_cuts(fields, lines):
 _LABEL_END = re.compile(r"(?:\s*\([^)\n]{0,40}\))?(?:\s*:|\s{2,}|\t|\s*$)")
 
 
-def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, cuts=None):
+def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, cuts=None, boxed=()):
     line = lines[i]
     hits = _hits(fields, groups, current, line)
     if not hits:
@@ -828,7 +930,8 @@ def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, c
             if f.get("label_at_cell_start") and idx != "line" and not _LABEL_END.match(line[e:]):
                 continue  # a label is followed by a colon, a column gap or nothing (the value below)
             end = full_end
-            if idx == "line":  # [label, "line"]: the first value in the rest of the line, past other labels
+            own_line = idx == "line"
+            if own_line:  # [label, "line"]: the first value in the rest of the line, past other labels
                 end, idx = len(line), 0
             if cuts and f["name"] in cuts:
                 if s >= cuts[f["name"]]:
@@ -884,11 +987,53 @@ def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, c
                                     row)
             # One-line form rows (each, column_before) never read a value from the lines below: a blank row's
             # value would come from the next row.
-            if not got and not (len(targets) > 1) and not (f.get("each") or f.get("column_before")):
+            if not got and own_line:
+                _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order)
+            elif not got and not (len(targets) > 1) and not (f.get("each") or f.get("column_before")) \
+                    and f["name"] not in boxed:  # a box row's column rule owns what sits below its header
                 _below(ex, g, (targets[0] if per_plan else None), f, ftype, lines, offs, i, s, end, idx, pno,
                        label, src, spans, rank, order, row)
             if row and (g, None, row, f["name"]) in ex.values:
                 ex.rows[f["name"]] = row
+
+
+def _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order):
+    """A [label, "line"] label with no value on its line: an e-signature stamp ("DocuSigned by:", the signer's
+    name, an envelope ID) is taller than one line of text, so the date beside the signature lands on a line just
+    above or below the label's. Take the nearest value within two non-empty lines either way, never on or past a
+    line holding another "line" label (the seller's signature line, below the buyer's), and never one that a "not"
+    or renewal word precedes on its line. The value outranks the next label's ("seller signs" after "buyer signs")
+    but not this label's own value on its line."""
+    if ftype in WHOLE:
+        return  # free text from a neighbouring line would be a guess
+
+    def stop(j):
+        return any(idx == "line" for _, _, fl in _hits(fields, groups, current, lines[j]) for _, _, idx, _ in fl)
+
+    found = []
+    for step in (-1, 1):
+        j, seen = i + step, 0
+        while 0 <= j < len(lines) and seen < 2:
+            if lines[j].strip():
+                if stop(j):
+                    break
+                seen += 1
+                for c in _cells(lines[j], offs[j]):
+                    vals = _typed(ftype, c[2])
+                    if not vals:
+                        continue
+                    before = lines[j][:c[0] - offs[j] + vals[0][0]]
+                    if any(nx.search(before) for nx in f["_not"]) or \
+                            (f.get("document_date") and _RENEWAL.search(before)):
+                        continue
+                    found.append((seen, step, c))
+                    break
+                if found and found[-1][1] == step:
+                    break
+            j += step
+    if found:
+        _, _, c = min(found, key=lambda x: (x[0], x[1]))  # nearest; above first on a tie (the stamp's top line)
+        _take(ex, g, None, f, ftype, c, 0, pno, label, src, spans, rank + 0.5, order)
 
 
 def _take(ex, g, plan, f, ftype, cell, idx, pno, label, src, spans, rank, order, row=None):
