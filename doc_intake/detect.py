@@ -39,13 +39,46 @@ _SECRET = re.compile(r"(?i:\b(?:secret(?:\s+key)?|client\s+secret|api[\s_-]?key|
 _SSN_DASHED = re.compile(r"(?<![\d-])(\d{3})-(\d{2})-(\d{4})(?![\d-])")
 _SSN_CTX = re.compile(r"(?i:\b(?:ssn|social\s+security(?:\s+(?:number|no\.?))?|soc\.?\s*sec\.?|itin"
                       r"|taxpayer\s+identification\s+number|tin)\b)\D{0,80}?(?<!\d)(\d{3})[ -]?(\d{2})[ -]?(\d{4})(?!\d)")
-_CARD = re.compile(r"(?<![\d-])\d(?:[ -]?\d){12,18}(?![\d-])")
-# Dotted cards are written in groups, every separator a dot: 4-4-4-4 (13 to 19 digits as 4-4-4-1..4-4-4-4-3) or
-# Amex/Diners 4-6-5 / 4-6-4. Group lengths keep out thousands (1.234.567), versions, IPs, dates and decimals; a dot
-# only counts as a boundary when no digit sits on its other side.
-_CARD_DOTTED = re.compile(r"(?<![\d-])(?<!\d[.,])\d{4}\.(?:\d{4}\.\d{4}\.\d{1,4}(?:\.\d{1,3})?|\d{6}\.\d{4,5})"
-                          r"(?![\d-])(?![.,]\d)")
-_CARD_GROUPED = re.compile(r"^\d{4}([ .-]?)\d{4}\1\d{4}\1\d{1,7}$")
+# Card candidates: 13+ digits with single space, dash or dot separators, mixed or not. A dot counts as the edge of
+# a value only when no digit sits on its other side, so a decimal or a version string isn't cut into a card.
+_CARD = re.compile(r"(?<![\d-])(?<!\d\.)\d(?:[ .-]?\d){12,40}(?![\d-])(?!\.\d)")
+# Card groupings: 4-4-4-1..4, 4-4-4-4-1..3 (19 digits), Amex 4-6-5 and Diners 4-6-4. A candidate with a dot must be
+# grouped like this, which keeps thousands (1.234.567), versions, IP addresses, dates and decimals out.
+_CARD_GROUPS = re.compile(r"^(?:\d{13,19}|\d{4}[ .-]\d{4}[ .-]\d{4}[ .-]\d{1,4}(?:[ .-]\d{1,3})?"
+                          r"|\d{4}[ .-]\d{6}[ .-]\d{4,5})$")
+# Card-shaped digits that fail Luhn, one separator throughout: hidden as long-number (maybe an OCR misread).
+_CARD_GROUPED = re.compile(r"^\d{4}([ .-]?)(?:\d{4}\1\d{4}\1(?:\d{1,7}|\d{4}\1\d{1,3})|\d{6}\1\d{4,5})$")
+_CARD_PIECE = re.compile(r"\d+")
+
+
+def _card_spans(text):
+    """[(start, end, kind)] for card candidates. A run of groups (a CSV row with an expiry, a list number before
+    the card) is cut to the longest stretch of whole groups that is a card."""
+    out = []
+    for m in _CARD.finditer(text):
+        raw = m.group(0)
+        if "." not in raw and is_card(re.sub(r"\D", "", raw)):
+            out.append((m.start(), m.end(), "card"))
+            continue
+        groups = [(g.start(), g.end()) for g in _CARD_PIECE.finditer(raw)]
+        best = None
+        for i in range(len(groups)):
+            for j in range(len(groups), i, -1):
+                piece = raw[groups[i][0]:groups[j - 1][1]]
+                digits = re.sub(r"\D", "", piece)
+                if best and len(digits) <= best[2]:
+                    break
+                if 13 <= len(digits) <= 19 and _CARD_GROUPS.match(piece) and is_card(digits):
+                    best = (groups[i][0], groups[j - 1][1], len(digits))
+        if best:
+            out.append((m.start() + best[0], m.start() + best[1], "card"))
+            continue
+        n = len(re.sub(r"\D", "", raw))
+        if n >= 13 and _CARD_GROUPED.match(raw) and ("." not in raw or n >= 15):
+            out.append((m.start(), m.end(), "long-number"))
+    return out
+
+
 _NINE = re.compile(r"(?<![\d-])\d{9}(?![\d-])")
 _EIN = re.compile(r"(?<![\d-])\d{2}-\d{7}(?![\d-])")
 _MBI = re.compile(r"\b[1-9][AC-HJKMNP-RT-Y][0-9AC-HJKMNP-RT-Y]\d-?[AC-HJKMNP-RT-Y][0-9AC-HJKMNP-RT-Y]\d-?"
@@ -216,12 +249,7 @@ def raw_spans(text):
         k = ssn_kind(*m.groups())
         if k:
             out.append((m.start(1), m.end(3), k))
-    for m in (*_CARD.finditer(text), *_CARD_DOTTED.finditer(text)):
-        digits = re.sub(r"\D", "", m.group(0))
-        if is_card(digits):
-            add(m, "card")
-        elif len(digits) >= 13 and _CARD_GROUPED.match(m.group(0)):
-            add(m, "long-number")  # card-shaped but fails Luhn: maybe an OCR misread, so hide it anyway
+    out.extend(_card_spans(text))
     transport = transport_header_spans(text)
     for m in _NINE.finditer(text):
         if aba_ok(m.group(0)) and not any(s <= m.start() < e for s, e in transport):
