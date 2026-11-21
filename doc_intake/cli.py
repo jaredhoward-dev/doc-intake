@@ -25,7 +25,7 @@ import string
 import sys
 import tomllib
 
-from . import config as engine_config, fields as fx, pairs, preview, scan
+from . import __version__, config as engine_config, fields as fx, llm, pairs, places, preview, reader, scan
 from .dates import document_date
 from .places import DocError, clean_part, log_access, rel, state_dir
 from .reader import EXT
@@ -140,6 +140,16 @@ def _rules(raw):
         rules.append({"category": cat, "patterns": rxs, "min_matches": need, "profile": prof, "dest": dest,
                       "name": label})
     return rules
+
+
+def config_source(flag=None, environ=None):
+    """How find_config finds the file, as doctor reports it: "--config", "$DOC_INTAKE_CONFIG" or "./doc-intake.toml"."""
+    environ = os.environ if environ is None else environ
+    if flag:
+        return "--config"
+    if environ.get(ENV):
+        return f"${ENV}"
+    return f"./{DEFAULT_NAME}"
 
 
 def load_config(path):
@@ -272,6 +282,95 @@ def cmd_pairs(args, out=print):
     return 1 if bad else 0
 
 
+# ---------------------------------------------------------------- doctor
+TOOLS = ("pdftotext", "pdftoppm", "tesseract")
+
+
+def _importable(name):
+    """True when the optional module imports (zxingcpp, PIL); nothing else is loaded or run."""
+    try:
+        __import__(name)
+    except ImportError:
+        return False
+    return True
+
+
+def _probe():
+    """The memory-cap probe's child: reads nothing, does nothing."""
+
+
+def memory_cap():
+    """True when the memory cap (RLIMIT_AS) applies on this platform, False when the OS refuses it, None when the
+    probe failed: one trivial bounded run that reads no file, with a short timeout."""
+    _, info = reader.run_bounded(_probe, timeout=10)
+    reader.reset_uncapped()   # the probe is not a read
+    return info.get("capped")
+
+
+def _found(path, kind="dir"):
+    ok = os.path.isdir(path) if kind == "dir" else os.path.isfile(path)
+    return "ok" if ok else "missing"
+
+
+def cmd_doctor(args, prog=SCRIPT, out=print):
+    """Report the setup without reading any document: Python and doc-intake versions, the config and the places it
+    names, the optional tools, whether the memory cap applies, and the local model. Read-only: it creates no folder
+    and writes no log. Exit 0 when the config loads and its root exists, 2 otherwise (missing optional tools are
+    informational)."""
+    v = sys.version_info
+    out(f"python: {v.major}.{v.minor}.{v.micro} " + ("ok" if v >= (3, 11) else "too old (3.11 or newer needed)"))
+    out(f"doc-intake: {__version__}")
+    status, model = 0, None
+    try:
+        path = find_config(args.config)
+        out(f"config: {path} (found by {config_source(args.config)})")
+        settings = load_config(path)
+        apply(settings, prog)
+        out("config loads: ok")
+        root = places.root()   # DocError naming the root when it is missing; creates nothing
+    except ConfigError as e:
+        print(f"doc-intake: config: {e}", file=sys.stderr)
+        status = 2
+    except DocError as e:   # the root is missing: the same message every other command gives
+        out("root: missing")
+        print(f"doc-intake: {e}", file=sys.stderr)
+        status, model = 2, settings["model"]
+    else:
+        out("root: ok")
+        out(f"inbox: {_found(os.path.join(root, settings['inbox']))}")
+        out(f"state folder: {_found(os.path.join(root, settings['state']))}")
+        if settings["profiles_dir"]:
+            names = fx.profile_names()
+            out(f"profiles_dir: ok ({len(names)} profile(s){': ' + ', '.join(names) if names else ''})")
+        else:
+            out("profiles_dir: not configured")
+        senders = settings["senders_file"]
+        out(f"senders_file: {_found(senders, 'file') if senders else 'not configured'}")
+        out(f"privacy_terms_file: {'configured' if settings['privacy_terms_file'] else 'not configured'}")
+        out(f"routing rules: {len(settings['route'])}")
+        model = settings["model"]
+    for tool in TOOLS:
+        out(f"{tool}: {'ok' if reader.have(tool) else 'missing'}")
+    magick = reader.magick_cmd()
+    out("imagemagick: " + ("missing" if magick is None else "ok (7)" if magick == ["magick"] else "ok (6)"))
+    out(f"zxing: {'ok' if _importable('zxingcpp') else 'missing'}")
+    out(f"pillow: {'ok' if _importable('PIL') else 'missing'}")
+    capped = memory_cap()
+    out("memory cap: " + {True: "ok", False: "not available on this platform (the OS refuses it; the timeout and "
+                                              "the other limits still apply)"}.get(capped, "unknown (probe failed)"))
+    if model is None:
+        out("model: unknown (config did not load)")
+    elif not model:
+        out("model: not configured")
+    else:
+        out(f"model: {model}")
+        if args.no_model:
+            out("model server: skipped (--no-model)")
+        else:
+            out(f"model server: {'ok' if llm.reachable() else 'not reachable on 127.0.0.1:' + str(llm.OLLAMA_PORT)}")
+    return status
+
+
 COMMANDS = {"scan": cmd_scan, "fields": cmd_fields, "preview": preview.cmd_preview, "approve": cmd_approve,
             "read": cmd_read, "keep": cmd_keep, "cleanup": cmd_cleanup, "extract": cmd_extract, "status": cmd_status,
             "pairs": cmd_pairs}
@@ -317,6 +416,8 @@ def parser(prog=SCRIPT):
     s.add_argument("--pages", required=True)
     s.add_argument("--llm-check", action="store_true")
     s.add_argument("--model")
+    s = sub.add_parser("doctor", help="check the config, tools, memory cap and model; reads no document")
+    s.add_argument("--no-model", action="store_true", help="skip asking the local model server")
     s = sub.add_parser("cleanup", help="delete old task files and extracts")
     s.add_argument("--task")
     s.add_argument("--older-than", type=int, default=30, metavar="DAYS")
@@ -329,6 +430,8 @@ def main(argv=None, prog=SCRIPT):
     or MODULE (from __main__.py)."""
     args = parser(prog).parse_args(argv)
     os.umask(0o077)
+    if args.cmd == "doctor":
+        return cmd_doctor(args, prog)
     try:
         apply(load_config(find_config(args.config)), prog)
     except ConfigError as e:
