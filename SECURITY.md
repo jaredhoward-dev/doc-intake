@@ -1,7 +1,12 @@
 # Security
 
-Report a vulnerability privately through GitHub's "Report a vulnerability" (Security tab →
-Advisories). Please don't open a public issue for it.
+Report a vulnerability privately through GitHub's private vulnerability reporting:
+<https://github.com/jaredhoward-dev/doc-intake/security/advisories/new> (Security tab → Advisories →
+"Report a vulnerability"). Please don't open a public issue for it.
+
+What to expect: an acknowledgement within 7 days, and a fix or a plan within 30 days of the report.
+Disclosure is coordinated with you: the advisory and the fix are published together, and you are
+credited unless you'd rather not be.
 
 In scope: anything that lets document text or an unapproved value reach output, logs or the
 assistant; a detector that misses a value class it claims to catch; a way to approve, or to mark a
