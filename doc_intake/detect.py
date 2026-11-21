@@ -39,11 +39,13 @@ _SECRET = re.compile(r"(?i:\b(?:secret(?:\s+key)?|client\s+secret|api[\s_-]?key|
 _SSN_DASHED = re.compile(r"(?<![\d-])(\d{3})-(\d{2})-(\d{4})(?![\d-])")
 _SSN_CTX = re.compile(r"(?i:\b(?:ssn|social\s+security(?:\s+(?:number|no\.?))?|soc\.?\s*sec\.?|itin"
                       r"|taxpayer\s+identification\s+number|tin)\b)\D{0,80}?(?<!\d)(\d{3})[ -]?(\d{2})[ -]?(\d{4})(?!\d)")
-# Card candidates: 13+ digits with single space, dash or dot separators, mixed or not. A dot counts as the edge of
-# a value only when no digit sits on its other side, so a decimal or a version string isn't cut into a card.
-_CARD = re.compile(r"(?<![\d-])(?<!\d\.)\d(?:[ .-]?\d){12,40}(?![\d-])(?!\.\d)")
-# Card groupings: 4-4-4-1..4, 4-4-4-4-1..3 (19 digits), Amex 4-6-5 and Diners 4-6-4. A candidate with a dot must be
-# grouped like this, which keeps thousands (1.234.567), versions, IP addresses, dates and decimals out.
+# Card candidates: 13+ digits with single space, dash or dot separators, mixed or not. A separator counts as the
+# edge of a value only when no digit sits on its other side: a hyphenated label (ID-4111 ...) or a trailing dash
+# still ends the run, while a decimal or a version string isn't cut into a card.
+_CARD = re.compile(r"(?<!\d)(?<!\d-)(?<!\d\.)\d(?:[ .-]?\d){12,}(?!\d)(?!-\d)(?!\.\d)")
+# Card groupings: 4-4-4-1..4, 4-4-4-4-1..3 (19 digits), Amex 4-6-5 and Diners 4-6-4. A stretch with a dot, or one
+# cut out of a longer run, must be grouped like this, which keeps thousands (1.234.567), versions, IP addresses,
+# dates and decimals out.
 _CARD_GROUPS = re.compile(r"^(?:\d{13,19}|\d{4}[ .-]\d{4}[ .-]\d{4}[ .-]\d{1,4}(?:[ .-]\d{1,3})?"
                           r"|\d{4}[ .-]\d{6}[ .-]\d{4,5})$")
 # Card-shaped digits that fail Luhn, one separator throughout: hidden as long-number (maybe an OCR misread).
@@ -51,31 +53,64 @@ _CARD_GROUPED = re.compile(r"^\d{4}([ .-]?)(?:\d{4}\1\d{4}\1(?:\d{1,7}|\d{4}\1\d
 _CARD_PIECE = re.compile(r"\d+")
 
 
+def _longest_stretch(raw, groups, starts, hi, ok):
+    """(i, j, digits) of the longest stretch of whole groups i..j (i in starts, j < hi) with 13-19 digits that
+    ok(piece, i, j) accepts. A stretch spans at most 19 groups, so this is linear in the run."""
+    best = None
+    for i in starts:
+        n = 0
+        for j in range(i, hi):
+            n += groups[j][1] - groups[j][0]
+            if n > 19:
+                break
+            if n >= 13 and (best is None or n > best[2]) and ok(raw[groups[i][0]:groups[j][1]], i, j):
+                best = (i, j, n)
+    return best
+
+
 def _card_spans(text):
-    """[(start, end, kind)] for card candidates. A run of groups (a CSV row with an expiry, a list number before
-    the card) is cut to the longest stretch of whole groups that is a card."""
+    """[(start, end, kind)] for card candidates. A run of digit groups (a CSV row with an expiry, a list number
+    before the card, two cards in a row) yields every card in it, left to right, each the longest stretch of whole
+    groups that passes length, prefix and Luhn. Between and beside the cards, a card-grouped stretch that fails Luhn
+    is hidden as long-number: when it fills its gap, or when every other group there is shorter than four digits."""
     out = []
     for m in _CARD.finditer(text):
-        raw = m.group(0)
+        raw, base = m.group(0), m.start()
         if "." not in raw and is_card(re.sub(r"\D", "", raw)):
             out.append((m.start(), m.end(), "card"))
             continue
         groups = [(g.start(), g.end()) for g in _CARD_PIECE.finditer(raw)]
-        best = None
-        for i in range(len(groups)):
-            for j in range(len(groups), i, -1):
-                piece = raw[groups[i][0]:groups[j - 1][1]]
-                digits = re.sub(r"\D", "", piece)
-                if best and len(digits) <= best[2]:
-                    break
-                if 13 <= len(digits) <= 19 and _CARD_GROUPS.match(piece) and is_card(digits):
-                    best = (groups[i][0], groups[j - 1][1], len(digits))
-        if best:
-            out.append((m.start() + best[0], m.start() + best[1], "card"))
-            continue
-        n = len(re.sub(r"\D", "", raw))
-        if n >= 13 and _CARD_GROUPED.match(raw) and ("." not in raw or n >= 15):
-            out.append((m.start(), m.end(), "long-number"))
+
+        def card_ok(piece, i, j):
+            return bool(_CARD_GROUPS.match(piece)) and is_card(re.sub(r"\D", "", piece))
+
+        long_before = [0]  # long_before[k]: groups of 4+ digits among groups[:k]
+        for s, e in groups:
+            long_before.append(long_before[-1] + (e - s >= 4))
+        cards, i = [], 0
+        while i < len(groups):
+            b = _longest_stretch(raw, groups, (i,), len(groups), card_ok)
+            if b:
+                cards.append(b)
+                i = b[1] + 1
+            else:
+                i += 1
+        gaps, prev = [], 0
+        for ci, cj, _ in cards:
+            out.append((base + groups[ci][0], base + groups[cj][1], "card"))
+            gaps.append((prev, ci))
+            prev = cj + 1
+        gaps.append((prev, len(groups)))
+        for lo, hi in gaps:
+            def misread_ok(piece, a, z, lo=lo, hi=hi):
+                n = len(re.sub(r"\D", "", piece))
+                if not _CARD_GROUPED.match(piece) or ("." in piece and n < 15):
+                    return False
+                outside = long_before[hi] - long_before[lo] - (long_before[z + 1] - long_before[a])
+                return outside == 0
+            b = _longest_stretch(raw, groups, range(lo, hi), hi, misread_ok)
+            if b:
+                out.append((base + groups[b[0]][0], base + groups[b[1]][1], "long-number"))
     return out
 
 

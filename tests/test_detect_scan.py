@@ -130,6 +130,38 @@ def test_grouped_digits_failing_luhn_are_a_number_not_a_card(text):
     assert detect.counts(detect.find_spans(text)) == {"long-number": 1}
 
 
+@pytest.mark.parametrize("text", ["4111 1111 1111 1111 5555 5555 5555 4444",
+                                  "4111.1111.1111.1111.5555.5555.5555.4444",
+                                  "4111-1111-1111-1111,5555-5555-5555-4444"])
+def test_two_cards_in_one_run_are_both_found(text):
+    assert detect.counts(detect.find_spans(text)) == {"card": 2}  # snapshots black out find_spans once
+    red, _ = detect.redact(text)
+    assert re.fullmatch(r"\[CARD-last4:1111\][ .,-]\[CARD-last4:4444\]", red), red
+
+
+@pytest.mark.parametrize("text", ["ID-4111 1111 1111 1111", "Visa-4111 1111 1111 1111", "4111 1111 1111 1111-VISA",
+                                  "4111-1111-1111-1111-"])
+def test_card_touching_a_hyphen(text):
+    c, rest = _card_only(text)
+    assert detect.counts(detect.find_spans(text)) == {"card": 1} and c == {"card": 1}, text
+    assert not re.search(r"\d{3}", rest), text
+
+
+@pytest.mark.parametrize("text,want", [("2030-0042-0017-0003-0001", {}), ("Invoice INV-2030-0042", {}),
+                                       ("123-45-6789", {"ssn": 1}), ("800-555-0142", {"phone": 1}),
+                                       ("2030-01-05", {}), ("1.234.567", {}), ("192.168.1.1", {})])
+def test_ordinary_hyphenated_numbers_stay_clean(text, want):
+    assert detect.counts(detect.find_spans(text)) == want
+
+
+@pytest.mark.parametrize("text", ["Visa 4111 1111 1111 1112 12 30", "Exp 12 30 4111 1111 1111 1112",
+                                  "12 4111 1111 1111 1112", "1 4111-1111-1111-1112", "4111.1111.1111.1112 123"])
+def test_misread_card_beside_other_groups_is_a_number(text):
+    assert detect.counts(detect.find_spans(text)) == {"long-number": 1}
+    red, _ = detect.redact(text)
+    assert not re.search(r"\d{4}", red), text
+
+
 def test_ssn_rules():
     assert detect.ssn_kind("000", "12", "3456") is None
     assert detect.ssn_kind("666", "12", "3456") is None
@@ -147,14 +179,16 @@ def test_redaction_leaves_no_fake_value():
                       "DOB: 01/02/1980", f"Medicare {MBI}", "Passport No. C12345678", "Member ID: XYZ123456789",
                       "Employee ID 00123456", f"EIN {EIN}", "someone@example.com",
                       "Visa 5555.5555.5555.4444", "Amex 3782.822463.10005",
-                      "Visa,6011.1111.1111.1117,12/30", "Mixed 5555 5555.5555-4444"])
+                      "Visa,6011.1111.1111.1117,12/30", "Mixed 5555 5555.5555-4444",
+                      "Cards 4111 1111 1111 1111 5555 5555 5555 4444", "ID-3782 822463 10005"])
     red, c = detect.redact(text)
     for v in FAKES[:-1] + ["5555.5555", "822463", "10005", "6011", "5555 5555"]:
         assert v not in red
     assert "[CARD-last4:1111]" in red and "[ACCOUNT-last4:8901]" in red and "[SSN]" in red
     assert "Visa [CARD-last4:4444]\n" in red and "Amex [CARD-last4:0005]\n" in red
     assert "Visa,[CARD-last4:1117],12/30" in red and "Mixed [CARD-last4:4444]" in red
-    assert c["ssn"] == 1 and c["card"] == 5
+    assert "Cards [CARD-last4:1111] [CARD-last4:4444]" in red and red.endswith("ID-[CARD-last4:0005]")
+    assert c["ssn"] == 1 and c["card"] == 8
 
 
 # ---------------------------------------------------------------- scan and held
