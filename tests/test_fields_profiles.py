@@ -438,6 +438,96 @@ def test_a_line_label_never_takes_a_date_from_another_signature_line(vehicle):
     assert {r["field"]: r["value"] for r in recs} == {"seller_date": "2031-07-12"}
 
 
+# The Truth in Lending boxes as OCR gives them from a scan: each header wrapped over two or three lines, its
+# sentence below, the figure at the bottom of the box after a gap, and every line's columns a few characters off
+# the others. The value-below rule's fixed window finds none of the four figures; "box_row" does.
+TIL_BOXES = """Contract Date 07/11/2031
+NEW   2031 FORD RANGER   XLT       Business
+
+  ANNUAL            FINANCE           Amount            Total of            Total Sale
+ PERCENTAGE        CHARGE            Financed          Payments           Price
+   RATE           The dollar        The amount of      The amount you     The total cost of
+ The cost of       amount the        credit provided   will have paid     your purchase on
+your credit as    credit will        to you or on       after you have    credit, including
+ a yearly rate.    cost you.        your behalf.       made all payments  your down payment of
+                                                        as scheduled.     $2,500.00
+
+     7.25 %          $6,512.88         $30,100.00          $36,612.88         $39,112.88
+
+Your Payment Schedule Will Be:
+"""
+TIL_FIELDS = ("apr", "finance_charge", "amount_financed", "total_of_payments", "total_sale_price")
+
+
+def _til(prof, text):
+    recs, _, _ = fx.extract(prof, [(1, text)], "x.pdf", keep_span=True)
+    return {r["field"]: r for r in recs if r["field"] in TIL_FIELDS}
+
+
+def test_box_row_finds_each_figure_under_its_own_wrapped_header(vehicle):
+    got = _til(fx.load_profile("vehicle_purchase"), TIL_BOXES)
+    assert {k: (r["value"], r["label"]) for k, r in got.items()} == {
+        "apr": ("7.25 %", "annual percentage rate"),
+        "finance_charge": ("$6,512.88", "finance charge"),
+        "amount_financed": ("$30,100.00", "amount financed"),
+        "total_of_payments": ("$36,612.88", "total of payments"),
+        "total_sale_price": ("$39,112.88", "total sale price"),
+    }
+    for r in got.values():  # each value carries its place on the page, for the review page's crop
+        assert TIL_BOXES[r["span"][0]:r["span"][1]] == r["value"]
+
+
+def test_box_row_is_opt_in(vehicle):
+    prof = fx.load_profile("vehicle_purchase")
+    for f in prof["fields"]:
+        f.pop("box_row", None)
+    got = _til(prof, TIL_BOXES)  # as before the key: only the amount financed, from its sentence
+    assert {k: r["value"] for k, r in got.items()} == {"amount_financed": "$30,100.00"}
+
+
+def test_box_row_on_a_group():
+    prof = {"name": "t", "default_group": "til", "groups": {"til": {"global": True, "box_row": True}},
+            "fields": [{"group": "til", "name": n, "type": t, "labels": [lab]} for n, t, lab in (
+                ("apr", "percent", "annual percentage rate"), ("finance_charge", "money", "finance charge"),
+                ("amount_financed", "money", "amount financed"), ("total_of_payments", "money", "total of payments"),
+                ("total_sale_price", "money", "total sale price"))]}
+    fx.check_profile(prof)
+    got = _til(prof, TIL_BOXES)
+    assert [got[k]["value"] for k in TIL_FIELDS] == ["7.25 %", "$6,512.88", "$30,100.00", "$36,612.88", "$39,112.88"]
+
+
+def _figures(*cells):
+    """The figures line with each (column, text) placed at its column."""
+    line = ""
+    for col, text in cells:
+        line = line.ljust(col) + text
+    return line
+
+
+def test_box_row_never_gives_a_figure_to_a_neighbouring_header(vehicle):
+    prof = fx.load_profile("vehicle_purchase")
+    # TIL_BOXES' top header line sets the columns: cells at 2, 20, 38, 56 and 76, so edges at 14, 32.5, 50 and 70.
+    head, tail = TIL_BOXES.split("     7.25 %")
+    tail = tail.split("\n", 1)[1]
+    # The finance charge box is blank: its neighbours' figures stay theirs, and it takes none.
+    blank = head + _figures((5, "7.25 %"), (36, "$30,100.00"), (56, "$36,612.88"), (75, "$39,112.88")) + "\n" + tail
+    got = _til(prof, blank)
+    assert {k: r["value"] for k, r in got.items()} == {
+        "apr": "7.25 %", "amount_financed": "$30,100.00", "total_of_payments": "$36,612.88",
+        "total_sale_price": "$39,112.88"}
+    # A figure astride the edge between two columns belongs to neither.
+    edge = head + _figures((5, "7.25 %"), (28, "$6,512.88"), (40, "$30,100.00"), (56, "$36,612.88"),
+                           (75, "$39,112.88")) + "\n" + tail
+    got = _til(prof, edge)
+    assert "finance_charge" not in got and got["apr"]["value"] == "7.25 %"
+    assert got["amount_financed"]["value"] == "$30,100.00"
+    # Two figures under one header: neither is taken.
+    two = head + _figures((5, "7.25 %"), (15, "$6,512.88"), (26, "$612.88"), (40, "$30,100.00"), (56, "$36,612.88"),
+                          (75, "$39,112.88")) + "\n" + tail
+    got = _til(prof, two)
+    assert "finance_charge" not in got and got["total_of_payments"]["value"] == "$36,612.88"
+
+
 # ---------------------------------------------------------------- auto_loan_statement
 def test_lender_statement_fields():
     got, recs, _ = ext("auto_loan_statement", LENDER_STATEMENT)

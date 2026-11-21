@@ -112,6 +112,7 @@ A label can be a pair `[text, index]` instead of a plain string:
 | `column_before` | `"<header label>"` or `[label, n]`: ignore everything at or right of that header's column. |
 | `below_lines` | Look up to this many non-empty lines below the label instead of three. |
 | `below_values_only` | With `below_lines`: a line below counts only when it holds nothing but values. |
+| `box_row` | `true`: the value is one figure in a row of boxes under wrapped headers (a scanned Truth in Lending disclosure). The figures line (two or more cells, all values) and the lines just above it are split into columns by the widest header line; the field takes the figure in the column whose header text holds its label. A blank box, two figures in one box, or a figure astride a column edge gives nothing, never a neighbour's figure. Also allowed on a group, for all its fields. |
 | `model_from` | Take what follows a make in another field's value (needs a type registered with `model_prefix`). |
 
 The two examples use `anywhere`, `document_date`, `exclusive_label`, `label_at_cell_start`, `from`,
@@ -151,7 +152,8 @@ A field's labels are looked for only while its group is the current section, or 
 
 - `words`: a line whose cell holds one of these words starts that group's section;
 - `per_plan` and `plan_markers`: a benefits-style table, where a heading row names several plans and each later
-  row gives one value per plan.
+  row gives one value per plan;
+- `box_row`: every field of the group is read as a figure in a row of boxes (see `box_row` under Fields).
 
 ## Tables
 
