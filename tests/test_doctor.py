@@ -5,6 +5,7 @@ import socket
 import sys
 
 import pytest
+from helpers import CARD, FAKES, SSN
 
 from doc_intake import __version__, cli, llm, reader
 
@@ -185,6 +186,24 @@ def test_model_server_down(tmp_path, tools, monkeypatch, capsys):
     p, _ = config(tmp_path, 'model = "example-model"\n')
     code, lines, _ = run(["--config", str(p), "doctor"], capsys)
     assert code == 0 and f"model server: not reachable on 127.0.0.1:{port}" in lines
+
+
+def test_doctor_prints_no_document_value(tmp_path, no_network, monkeypatch, capsys):
+    """doctor is a printing path: with fake sensitive files in the inbox, the state folder and the root, and the
+    real tools and memory-cap probe, nothing it prints holds a value or a line from a file (profile names only)."""
+    monkeypatch.delenv(cli.ENV, raising=False)
+    p, root = config(tmp_path)
+    body = f"Example Corner Shop\nSSN {SSN}\ncard {CARD}\n" + "\n".join(FAKES) + "\n"
+    for folder in (root / "inbox", root / ".doc-intake", root):
+        folder.mkdir(exist_ok=True)
+        (folder / "shop.txt").write_text(body)
+    code = cli.main(["--config", str(p), "doctor"])
+    out, err = capsys.readouterr()
+    assert code == 0
+    printed = out + err
+    for v in FAKES:
+        assert v not in printed
+    assert "Example Corner Shop" not in printed and "shop.txt" not in printed
 
 
 def test_doctor_creates_nothing(tmp_path, tools, no_network, capsys):
