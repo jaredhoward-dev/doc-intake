@@ -773,3 +773,66 @@ def test_usage_offered_without_page_text_keeps_the_type_check():
 def test_usage_normalize_leaves_an_unmatched_value_alone():
     assert fx.normalize("usage", "  lots   of kWh ") == "lots of kWh"  # no figure: only the whitespace is tidied
     assert fx.normalize("usage", "") == ""
+
+
+# ---------------------------------------------------------------- figures cut out of a longer number by a column slice
+def test_a_money_figure_cut_from_a_longer_number_by_a_column_is_refused():
+    # The value-below rule reads only the label's column: here that slice starts inside a meter number, at
+    # "5123.50". Read on the page, digits run on before it, so it is no amount; with nothing else, the field is missing.
+    head = "Service         Amount\n"
+    text = head + "Meter No 0045123.50\n"
+    assert text[len(head) + head.index("Amount") - 4:].startswith("5123.50")  # where the slice starts
+    assert _run(_one("money", ["amount"]), text) == ({}, {})
+    # the next candidate wins instead: another "Amount" further down with a whole figure below it
+    text2 = text + "\nService         Amount\nElectric        $84.20\n"
+    assert _run(_one("money", ["amount"]), text2) == ({"v": "$84.20"}, {})
+
+
+@pytest.mark.parametrize("text, want", [
+    ("Amount\n$1,234.56\n", "$1,234.56"),              # an ordinary figure below its label
+    ("Amount\n1,234.56\n", "1,234.56"),
+    ("Item      Qty    Amount\nWidget    2      12.00\n", "12.00"),   # a column of amounts
+    ("Credit:   -5.00\n", "5.00"),                     # a lone minus is no digit run
+    ("Total:   $5.00-$6.00\n", "$5.00"),                # a range of amounts, each whole
+])
+def test_ordinary_amounts_still_extract(text, want):
+    label = "credit" if text.startswith("Credit") else ("total" if text.startswith("Total") else "amount")
+    got, dropped = _run(_one("money", [label]), text)
+    assert got["v"].lstrip("-") == want and dropped == {}
+
+
+@pytest.mark.parametrize("text, s, e, ftype, cut", [
+    ("12345678.00", 3, 11, "money", True),       # head: digits run on before
+    ("1,234,567.89", 6, 12, "money", True),      # head: a digit group then a comma
+    ("1234-5678.00", 5, 12, "money", True),      # head: a dashed number
+    ("4,500.00", 0, 4, "money", True),           # tail: a slice ending inside "4,500.00"
+    ("12.00/34", 0, 5, "money", True),           # tail: a slash then digits
+    ("$1,234.56", 0, 9, "money", False),         # the whole figure
+    ("-5.00", 1, 5, "money", False),             # a lone minus
+    ("$5.00-$6.00", 0, 5, "money", False),       # a dash then "$": another figure, not more digits
+    ("01/01/2030-01/14/2030", 0, 10, "date", False),   # a dash between dates is a range
+    ("01/01/2030-01/14/2030", 11, 21, "date", False),
+    ("12/31/2030", 6, 10, "year", True),         # a year taken out of a date
+    ("Tax year 2030", 9, 13, "year", False),
+    ("3.875 %", 0, 7, "percent", False),
+])
+def test_cut_from_longer(text, s, e, ftype, cut):
+    assert fx.cut_from_longer(text, s, e, ftype) is cut
+
+
+def test_box_row_and_table_amounts_still_extract():
+    """Figures in a row of boxes and in a line-item table are whole on the page, so the guard leaves them alone."""
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True, "box_row": True}},
+            "fields": [{"group": "g", "name": "first", "type": "money", "labels": ["first box"]},
+                       {"group": "g", "name": "second", "type": "money", "labels": ["second box"]}]}
+    fx.check_profile(prof)
+    got, dropped = _run(prof, "First Box            Second Box\n" + "$1,234.56".ljust(21) + "$30,100.00\n")
+    assert got == {"first": "$1,234.56", "second": "$30,100.00"} and dropped == {}
+    table = {"name": "t", "default_group": "g", "groups": {"g": {"global": True}, "items": {}},
+             "fields": [{"group": "g", "name": "total", "type": "money", "labels": ["total"]}],
+             "tables": [{"group": "items", "header_min": 2, "row_requires": ["code"],
+                         "columns": [{"name": "code", "type": "ref", "labels": ["code"]},
+                                     {"name": "fee", "type": "money", "labels": ["fee"]}]}]}
+    fx.check_profile(table)
+    recs, dropped, _ = fx.extract(table, [(1, "Code      Fee\nD2740     $1,200.00\nD0120     60.00\n")], "x")
+    assert sorted(r["value"] for r in recs if r["field"] == "fee") == ["$1,200.00", "60.00"] and dropped == {}
