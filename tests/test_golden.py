@@ -42,6 +42,9 @@ def _normalize(text, root):
     text = re.sub(r'("approved_hash": ")[0-9a-f]{64}"', r'\1<HASH>"', text)
     text = re.sub(r"(# approved-hash: )[0-9a-f]{64}", r"\1<HASH>", text)
     text = re.sub(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?", "<NOW>", text)
+    # Where the platform refuses the memory cap (macOS), scan says so; Linux doesn't. That line has its own tests
+    # (test_scan_memory.py), so the golden run drops it to stay the same on both.
+    text = re.sub(r"(?m)^\d+ files? read without a memory cap \(this platform refuses it\).*\n", "", text)
     return text.replace(today, "<TODAY>")
 
 
