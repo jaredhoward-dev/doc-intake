@@ -313,9 +313,9 @@ def cmd_fields(args, out=print):
     if places.is_tty():
         preview.preview_table(task, out)
     else:
-        out(f"The user previews it in his own terminal: {CFG.cli} preview \"{os.path.basename(path)}\"")
+        out(f"The user previews it in their own terminal: {CFG.cli} preview \"{os.path.basename(path)}\"")
         out(f"or as a page: {CFG.cli} preview --html \"{os.path.basename(path)}\"")
-        out(f"then, once he has looked: {CFG.cli} approve \"" + os.path.basename(path) + "\"")
+        out(f"then, once they have looked: {CFG.cli} approve \"" + os.path.basename(path) + "\"")
     return 0
 
 
@@ -663,7 +663,7 @@ def cmd_extract(args, out=print):
         log_access("extract", rel(p), f"pages={_ranges(pages)}", "user asked")
         out(f"wrote {rel(dest)}: redacted {detect.fmt_counts(red)}; llm-check {status}; "
             f"needs-review: {'yes' if needs else 'no'}; approved: no")
-        out(f"The user looks at it in his own editor, then: {CFG.cli} approve \""
+        out(f"The user looks at it in their own editor, then: {CFG.cli} approve \""
             + os.path.basename(dest) + "\"")
     return 0
 

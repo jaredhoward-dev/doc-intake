@@ -2,7 +2,7 @@ $ host.py fields --task paystub inbox/paystub.txt
 rc=0
 --- stdout
 wrote .doc-intake/tasks/paystub-<TODAY>.json: 1 documents, 17 fields, 18 missing (0 required), 3 flagged in 1 documents, 1 complete, 0 dropped as sensitive (none); approved: no
-The user previews it in his own terminal: python3 tests/host.py preview "paystub-<TODAY>.json"
+The user previews it in their own terminal: python3 tests/host.py preview "paystub-<TODAY>.json"
 or as a page: python3 tests/host.py preview --html "paystub-<TODAY>.json"
-then, once he has looked: python3 tests/host.py approve "paystub-<TODAY>.json"
+then, once they have looked: python3 tests/host.py approve "paystub-<TODAY>.json"
 --- stderr

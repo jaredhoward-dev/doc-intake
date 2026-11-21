@@ -2,7 +2,7 @@ $ host.py fields --task invoice inbox/invoice-software.txt inbox/invoice-print.t
 rc=0
 --- stdout
 wrote .doc-intake/tasks/invoice-<TODAY>.json: 2 documents, 11 fields, 5 missing (0 required), 2 flagged in 2 documents, 2 complete, 0 dropped as sensitive (none); approved: no
-The user previews it in his own terminal: python3 tests/host.py preview "invoice-<TODAY>.json"
+The user previews it in their own terminal: python3 tests/host.py preview "invoice-<TODAY>.json"
 or as a page: python3 tests/host.py preview --html "invoice-<TODAY>.json"
-then, once he has looked: python3 tests/host.py approve "invoice-<TODAY>.json"
+then, once they have looked: python3 tests/host.py approve "invoice-<TODAY>.json"
 --- stderr

@@ -100,8 +100,8 @@ $ python3 -m doc_intake scan
 
 $ python3 -m doc_intake fields --task receipt inbox/shop.txt
 ...
-The user previews it in his own terminal: python3 -m doc_intake preview "<task>.json"
-then, once he has looked: python3 -m doc_intake approve "<task>.json"
+The user previews it in their own terminal: python3 -m doc_intake preview "<task>.json"
+then, once they have looked: python3 -m doc_intake approve "<task>.json"
 
 $ python3 -m doc_intake read "<task>.json" --reason "monthly expenses"
 doc-intake: <task>.json is not approved: the user previews it, then approves it
