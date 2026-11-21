@@ -1,0 +1,42 @@
+# An example config for `python3 -m doc_intake`. Copy it, then change root to your own records folder.
+#
+# Found by --config PATH, else $DOC_INTAKE_CONFIG, else ./doc-intake.toml. Relative paths below resolve against
+# this file's folder, not the folder you run the command from. Unknown keys are an error. See docs/cli.md.
+
+# The records folder (required). `~` is expanded.
+root = "~/Records"
+
+# Folder names under root. These are the defaults.
+inbox = "inbox"
+state = ".doc-intake"
+
+# The field profiles, and the known-senders map (fake vendors in this example).
+profiles_dir = "../profiles"
+senders_file = "../profiles/senders.json"
+
+# A local Ollama model for the optional model pass (fields --llm, scan --llm-names). "" means none.
+model = ""
+
+# Words a model-made title must never contain, one per line (# lines are comments). Never printed.
+# privacy_terms_file = "private-terms.txt"
+
+# Routing: the first rule with at least min_matches (default 1) of its patterns in a document's redacted text
+# decides its category, profile, destination folder (with {year}) and file-name label. A document no rule matches
+# gets no profile and no destination. Patterns are regular expressions, matched case-insensitively; single quotes
+# keep backslashes literal.
+
+[[route]]
+category = "invoice"
+patterns = ['\binvoice\b', '\bamount\s+due\b|\bbill\s+to\b|\bdue\s+date\b']
+min_matches = 2
+profile = "invoice"
+dest = "Bills/{year}"
+name = "Invoice"
+
+[[route]]
+category = "receipt"
+patterns = ['\breceipt\b', '\bamount\s+paid\b|\border\s+total\b|\bsubtotal\b|\btotal\b']
+min_matches = 2
+profile = "receipt"
+dest = "Receipts/{year}"
+name = "Receipt"

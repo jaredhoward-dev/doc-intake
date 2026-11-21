@@ -11,8 +11,9 @@
   temporary records root, inbox and state folder, and example profiles under `tests/fixtures/`).
 - Example profiles (`profiles/receipt.json`, `profiles/invoice.json`) and a known-senders example
   with fake vendors.
-- A minimal CLI (`python3 -m doc_intake scan | fields | preview | approve | status | read`) over a
-  config file, so it runs without writing a host.
+- Done: a minimal CLI (`python3 -m doc_intake scan | fields | preview | approve | status | read`, plus
+  `keep`, `extract`, `cleanup` and `pairs`) over a TOML config file, so it runs without writing a host.
+  See [docs/cli.md](docs/cli.md).
 - `pyproject.toml` and a tagged release (`v0.1.0`) that hosts pin.
 
 ## Stage 3: better extraction
