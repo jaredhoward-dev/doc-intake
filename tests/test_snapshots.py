@@ -14,8 +14,33 @@ from doc_intake import fields as fx
 from doc_intake import snapshots as snap
 from doc_intake.config import CFG
 
-need_poppler = pytest.mark.skipif(not (shutil.which("pdftotext") and shutil.which("pdftoppm") and shutil.which("magick")),
-                                  reason="poppler-utils and ImageMagick needed")
+_need_tools = pytest.mark.skipif(not (shutil.which("pdftotext") and shutil.which("pdftoppm") and reader.magick_cmd()),
+                                 reason="poppler-utils and ImageMagick (7 or 6) needed")
+_real_have = reader.have
+
+
+def need_poppler(test):
+    """Needs poppler and ImageMagick 7 or 6; runs once per ImageMagick version installed (magick_version)."""
+    return _need_tools(pytest.mark.usefixtures("magick_version")(test))
+
+
+@pytest.fixture(params=["7", "6"])
+def magick_version(request, monkeypatch):
+    """ImageMagick 7, then forced onto ImageMagick 6's commands (`magick` hidden), each where installed. Where
+    `convert` is 7's legacy name (Homebrew) this checks the IM6 argv shapes, not IM6 itself; CI's Ubuntu runs real 6."""
+    if request.param == "7" and not _real_have("magick"):
+        pytest.skip("ImageMagick 7 not installed")
+    if request.param == "6":
+        if not (_real_have("convert") and _real_have("identify")):
+            pytest.skip("ImageMagick 6 commands not installed")
+        monkeypatch.setattr(reader, "have", lambda name: name != "magick" and _real_have(name))
+        assert reader.magick_cmd() == ["convert"] and reader.magick_cmd("identify") == ["identify"]
+    return request.param
+
+
+def im(*args):
+    """An ImageMagick convert-style command for the test's own checks (7's magick, else 6's convert)."""
+    return [*(reader.magick_cmd() or ["magick"]), *args]
 IN = host.INBOX
 
 
@@ -70,8 +95,8 @@ INVOICE = ["Example Cloud Co", "Invoice number   INV-0001", "Date of issue    Ma
 def pixel(png_bytes, x, y, tmp_path):
     p = tmp_path / "px.png"
     p.write_bytes(png_bytes)
-    r = subprocess.run(["magick", str(p), "-format", f"%[fx:int(255*p{{{x},{y}}}.r)] %[fx:int(255*p{{{x},{y}}}.g)] "
-                        f"%[fx:int(255*p{{{x},{y}}}.b)]", "info:"], capture_output=True, text=True, check=True)
+    r = subprocess.run(im(str(p), "-format", f"%[fx:int(255*p{{{x},{y}}}.r)] %[fx:int(255*p{{{x},{y}}}.g)] "
+                        f"%[fx:int(255*p{{{x},{y}}}.b)]", "info:"), capture_output=True, text=True, check=True)
     return tuple(int(v) for v in r.stdout.split())
 
 
@@ -80,8 +105,8 @@ def region_max(png_bytes, rect, tmp_path):
     p = tmp_path / "rg.png"
     p.write_bytes(png_bytes)
     x0, y0, x1, y1 = (int(v) for v in rect)
-    r = subprocess.run(["magick", str(p), "-alpha", "off", "-crop", f"{x1 - x0}x{y1 - y0}+{x0}+{y0}", "+repage", "-format",
-                        "%[fx:maxima]", "info:"], capture_output=True, text=True, check=True)
+    r = subprocess.run(im(str(p), "-alpha", "off", "-crop", f"{x1 - x0}x{y1 - y0}+{x0}+{y0}", "+repage", "-format",
+                        "%[fx:maxima]", "info:"), capture_output=True, text=True, check=True)
     return float(r.stdout)
 
 
@@ -137,6 +162,20 @@ def test_crop_has_a_highlight_and_blacks_out_the_account(tmp_path):
     # the account number: every pixel inside its box is black
     for rect in red_px:
         assert region_max(png, (rect[0] + 1, rect[1] + 1, rect[2] - 1, rect[3] - 1), tmp_path) == 0
+
+
+@need_poppler
+def test_image_crop_blacks_out_and_highlights(tmp_path):
+    src = tmp_path / "card.png"
+    subprocess.run(im("-size", "800x400", "xc:white", str(src)), check=True, capture_output=True)
+    assert snap.image_size(str(src)) == (800, 400)
+    box, red = (420, 180, 520, 210), (100, 180, 300, 210)
+    png, region, red_px, hl = snap.snapshot_image(str(src), box, (800, 400), [red])
+    assert png[:8] == b"\x89PNG\r\n\x1a\n" and hl and red_px
+    for rect in red_px:
+        assert region_max(png, (rect[0] + 1, rect[1] + 1, rect[2] - 1, rect[3] - 1), tmp_path) == 0
+    r, g, b = pixel(png, int((hl[0] + hl[2]) / 2), int((hl[1] + hl[3]) / 2), tmp_path)
+    assert r > 200 and b < 200
 
 
 def test_redaction_list_covers_detector_spans():

@@ -124,5 +124,8 @@ Read these before trusting it:
 ## Requirements
 
 Python 3 standard library. Optional system tools, each used only when present: `pdftotext`, `pdftoppm` and
-`pdfinfo` (poppler), `tesseract`, ImageMagick 7 (`magick`), and the `zxingcpp` Python module with Pillow for
-barcodes. Without one, a file it would have read is reported as unscreened or partly read.
+`pdfinfo` (poppler), `tesseract`, ImageMagick 7 (`magick`) or 6 (`convert` and `identify`, as Ubuntu 24.04
+ships it), and the `zxingcpp` Python module with Pillow for barcodes. Without one, a file it would have read is
+reported as unscreened or partly read. ImageMagick only converts, scales and crops images; PDF pages are rendered
+with `pdftoppm`, and only ImageMagick 7 is asked to render one when `pdftoppm` is missing, since distribution
+builds of 6 refuse PDF input in their `policy.xml` (the engine never changes that policy).

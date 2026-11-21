@@ -257,7 +257,7 @@ def test_streaming_fingerprint_matches_whole_text():
 
 # ---------------------------------------------------------------- page-by-page OCR (subprocess mocked)
 class FakeTools:
-    """Stands in for pdfinfo, pdftotext, pdftoppm, tesseract and magick; records each call."""
+    """Stands in for pdfinfo, pdftotext, pdftoppm, tesseract and ImageMagick (7 or 6); records each call."""
 
     def __init__(self, pages=9, size=(612, 792), image=(1000, 1000)):
         self.pages, self.size, self.image = pages, size, image
@@ -285,9 +285,9 @@ class FakeTools:
             self.rendered.append(img)
         elif tool == "tesseract":
             out = f"page from {os.path.basename(cmd[1])} " + TEXT
-        elif tool == "magick" and cmd[1] == "identify":
+        elif (tool == "magick" and cmd[1] == "identify") or tool == "identify":
             out = f"{self.image[0]} {self.image[1]}\n"
-        elif tool == "magick":
+        elif tool in ("magick", "convert"):
             open(cmd[-1], "wb").close()
 
         class R:
@@ -304,6 +304,42 @@ def tools(monkeypatch):
     monkeypatch.setattr(reader, "_run", t)
     monkeypatch.setattr(reader, "have", lambda name: True)
     return t
+
+
+@pytest.mark.parametrize("installed, convert, identify", [
+    ({"magick", "convert", "identify"}, ["magick"], ["magick", "identify"]),   # IM7 (with its legacy names)
+    ({"magick"}, ["magick"], ["magick", "identify"]),
+    ({"convert", "identify"}, ["convert"], ["identify"]),                      # IM6 (Ubuntu 24.04)
+    ({"convert"}, None, None),             # a lone convert: Windows' disk converter, not ImageMagick
+    (set(), None, None),
+])
+def test_magick_cmd_picks_im7_else_im6(monkeypatch, installed, convert, identify):
+    monkeypatch.setattr(reader, "have", lambda name: name in installed)
+    assert reader.magick_cmd() == reader.magick_cmd("convert") == convert
+    assert reader.magick_cmd("identify") == identify
+    with pytest.raises(ValueError):
+        reader.magick_cmd("mogrify")
+
+
+def test_large_image_is_downscaled_with_im6(rec, tools, monkeypatch, tmp_path):
+    monkeypatch.setattr(reader, "have", lambda name: name != "magick")
+    tools.image = (10000, 8000)
+    p = put(tmp_path, "photo.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 50)
+    reader.read_document(str(p), "jpeg", barcodes=False)
+    assert not tools.of("magick")
+    (ident,) = tools.of("identify")
+    (conv,) = tools.of("convert")
+    assert ident[1] == "-ping" and conv[conv.index("-resize") + 1] == f"{reader.MAX_OCR_PIXELS}@>"
+    assert conv[1:1 + len(reader.MAGICK_LIMITS)] == reader.MAGICK_LIMITS
+    assert tools.of("tesseract")[0][1] == conv[-1]
+
+
+def test_im6_never_reads_a_pdf(rec, tools, monkeypatch, tmp_path):
+    """Without pdftoppm, IM7 may render a page; IM6 is not asked (distribution policy.xml refuses PDF input)."""
+    monkeypatch.setattr(reader, "have", lambda name: name not in ("magick", "pdftoppm"))
+    p = put(tmp_path, "scan.pdf", b"%PDF-1.4\n")
+    doc = reader.read_document(str(p), "pdf", pages=[1], barcodes=False)
+    assert not tools.of("convert") and not tools.of("magick") and doc["incomplete"] == reader.OCR_FAILED
 
 
 def test_ocr_renders_one_page_at_a_time(rec, tools, tmp_path):

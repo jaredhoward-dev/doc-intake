@@ -8,8 +8,8 @@ reported as unscreened or partly read, never passed as safe.
 Bounds: each file is read in a forked child (run_bounded) under RLIMIT_AS (CHILD_MEM_MB, inherited by the tools it
 starts; not on macOS, which refuses it) and a wall-clock timeout (CHILD_TIMEOUT), in its own process group so a
 timeout kills its tools too; pages and images are scaled to at most MAX_OCR_PIXELS before OCR, and ImageMagick
-runs under MAGICK_LIMITS. Text never leaves this module except to the caller, which redacts it before anything is
-shown. Stdlib only, plus the optional tools.
+(7's `magick`, else 6's `convert` and `identify`: magick_cmd) runs under MAGICK_LIMITS. Text never leaves this
+module except to the caller, which redacts it before anything is shown. Stdlib only, plus the optional tools.
 """
 import os
 import pickle
@@ -32,6 +32,22 @@ MAX_RENDER_PAGES = 30
 
 def have(tool):
     return shutil.which(tool) is not None
+
+
+def magick_cmd(sub="convert"):
+    """The argv prefix for an ImageMagick command, or None when ImageMagick isn't installed. sub is "convert"
+    (convert or draw: the prefix takes input, options and output) or "identify".
+
+    ImageMagick 7's `magick` when present (["magick"], ["magick", "identify"]), else ImageMagick 6's own commands
+    (["convert"], ["identify"]): Ubuntu 24.04 ships 6. IM6 counts only when both `convert` and `identify` are on
+    PATH, since on Windows a lone `convert` is the system's disk converter. MAGICK_LIMITS work on both."""
+    if sub not in ("convert", "identify"):
+        raise ValueError(sub)
+    if have("magick"):
+        return ["magick"] if sub == "convert" else ["magick", sub]
+    if have("convert") and have("identify"):
+        return [sub]
+    return None
 
 
 IMAGE_TYPES = ("png", "jpeg", "gif", "tiff", "webp", "heic")
@@ -286,7 +302,8 @@ def page_dpi(size, dpi):
 
 
 def render_page(path, tmp, n, dpi):
-    """One page of a PDF as a png path (pdftoppm, else magick), or None."""
+    """One page of a PDF as a png path (pdftoppm, else ImageMagick 7), or None. ImageMagick 6 is never asked to
+    read a PDF: distribution builds (Ubuntu's) refuse PDF input in their policy.xml, which the engine leaves alone."""
     if have("pdftoppm"):
         prefix = os.path.join(tmp, f"p{dpi}-{n}")
         r = _run(["pdftoppm", "-r", str(dpi), "-png", "-singlefile", "-f", str(n), "-l", str(n), path, prefix])
@@ -294,7 +311,7 @@ def render_page(path, tmp, n, dpi):
         return img if r and r.returncode == 0 and os.path.exists(img) else None
     if have("magick"):
         img = os.path.join(tmp, f"m{dpi}-{n}.png")
-        r = _run(["magick", *MAGICK_LIMITS, "-density", str(dpi), f"{path}[{n - 1}]", img])
+        r = _run([*magick_cmd(), *MAGICK_LIMITS, "-density", str(dpi), f"{path}[{n - 1}]", img])
         return img if r and r.returncode == 0 else None
     return None
 
@@ -321,17 +338,18 @@ def ocr(image, notes):
 
 def prepare_image(path, ftype, tmp):
     """The image to OCR: converted to png (heic, webp, gif) and scaled down to MAX_OCR_PIXELS when bigger."""
-    if not have("magick"):
+    conv_cmd, ident = magick_cmd("convert"), magick_cmd("identify")
+    if not conv_cmd:
         return path
     big = False
-    r = _run(["magick", "identify", "-ping", "-format", "%w %h\n", f"{path}[0]"], text=True, errors="replace")
+    r = _run([*ident, "-ping", "-format", "%w %h\n", f"{path}[0]"], text=True, errors="replace")
     m = re.match(r"(\d+) (\d+)", r.stdout) if r and r.returncode == 0 else None
     if m:
         big = int(m.group(1)) * int(m.group(2)) > MAX_OCR_PIXELS
     if not big and ftype not in ("heic", "webp", "gif"):
         return path
     conv = os.path.join(tmp, "img.png")
-    cmd = ["magick", *MAGICK_LIMITS, f"{path}[0]"] + (["-resize", f"{MAX_OCR_PIXELS}@>"] if big else []) + [conv]
+    cmd = [*conv_cmd, *MAGICK_LIMITS, f"{path}[0]"] + (["-resize", f"{MAX_OCR_PIXELS}@>"] if big else []) + [conv]
     r = _run(cmd)
     return conv if r and r.returncode == 0 else path
 

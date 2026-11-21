@@ -5,8 +5,9 @@ PDF boxes are in PDF points with the origin at the top left of the page (pdftote
 in the image's pixels. A value's box is found by matching the page-text tokens its character span covers against
 the word list, by occurrence: the k-th occurrence of those tokens in the text is the k-th in the word list.
 
-Crops are rendered with pdftoppm (PDF) or magick (images). Every region a sensitive detector flags on the page is
-blacked out before the crop leaves this module, so a snapshot never shows more than the value does. Crops and the
+Crops are rendered with pdftoppm (PDF) or ImageMagick (images; 7 or 6, reader.magick_cmd), which only ever reads
+images here, never a PDF. Every region a sensitive detector flags on the page is blacked out before the crop leaves
+this module, so a snapshot never shows more than the value does. Crops and the
 words exist only in memory and in the caller's private temp folder; the only output is the PNG for the local
 preview page.
 """
@@ -16,7 +17,7 @@ import re
 import subprocess
 import tempfile
 
-from . import detect
+from . import detect, reader
 
 RENDER_DPI = 120
 PAD_PT = (210, 14, 40, 14)   # left, top, right, bottom padding around a value's box, in points: the label is left
@@ -138,8 +139,11 @@ def crop_box(box, size, unit_per_pt=1.0):
 
 
 def _draw(src, dest, rects, highlight):
-    """Black rectangles, then a translucent highlight, onto src (magick). rects and highlight in src pixels."""
-    cmd = ["magick", src, "-fill", "black", "-stroke", "none"]
+    """Black rectangles, then a translucent highlight, onto src (ImageMagick). rects and highlight in src pixels."""
+    magick = reader.magick_cmd()
+    if not magick:
+        return False
+    cmd = [*magick, *reader.MAGICK_LIMITS, src, "-fill", "black", "-stroke", "none"]
     for x0, y0, x1, y1 in rects:
         cmd += ["-draw", f"rectangle {int(x0) - 1},{int(y0) - 1} {int(x1) + 1},{int(y1) + 1}"]
     if highlight:
@@ -193,7 +197,10 @@ def snapshot_image(image, box, size, redactions):
     with tempfile.TemporaryDirectory(prefix="docsnap-") as tmp:
         os.chmod(tmp, 0o700)
         crop = os.path.join(tmp, "c.png")
-        r = _run(["magick", f"{image}[0]", "-crop", f"{w}x{h}+{x}+{y}", "+repage", crop])
+        magick = reader.magick_cmd()
+        if not magick:
+            return None
+        r = _run([*magick, *reader.MAGICK_LIMITS, f"{image}[0]", "-crop", f"{w}x{h}+{x}+{y}", "+repage", crop])
         if not r or r.returncode != 0:
             return None
         reg = (x, y, x + w, y + h)
@@ -207,7 +214,10 @@ def snapshot_image(image, box, size, redactions):
 
 
 def image_size(image):
-    r = _run(["magick", "identify", "-ping", "-format", "%w %h\n", f"{image}[0]"], text=True, errors="replace")
+    ident = reader.magick_cmd("identify")
+    if not ident:
+        return None
+    r = _run([*ident, "-ping", "-format", "%w %h\n", f"{image}[0]"], text=True, errors="replace")
     m = re.match(r"(\d+) (\d+)", r.stdout) if r and r.returncode == 0 else None
     return (int(m.group(1)), int(m.group(2))) if m else None
 
