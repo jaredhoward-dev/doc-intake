@@ -70,8 +70,9 @@ def _longest_stretch(raw, groups, starts, hi, ok):
 
 def _card_spans(text):
     """[(start, end, kind)] for card candidates. A run of digit groups (a CSV row with an expiry, a list number
-    before the card, two cards in a row) yields every card in it, left to right, each the longest stretch of whole
-    groups that passes length, prefix and Luhn. Between and beside the cards, a card-grouped stretch that fails Luhn
+    before the card, two cards in a row) yields every card in it: the longest stretch of whole groups from each start
+    that passes length, prefix and Luhn, overlapping stretches merged into one span (its tag shows the last four
+    digits of the stretch that ends last). Between and beside the cards, a card-grouped stretch that fails Luhn
     is hidden as long-number: when it fills its gap, or when every other group there is shorter than four digits."""
     out = []
     for m in _CARD.finditer(text):
@@ -87,14 +88,17 @@ def _card_spans(text):
         long_before = [0]  # long_before[k]: groups of 4+ digits among groups[:k]
         for s, e in groups:
             long_before.append(long_before[-1] + (e - s >= 4))
-        cards, i = [], 0
-        while i < len(groups):
+        # The longest card stretch from every start, overlapping ones merged: a stretch that passes Luhn by chance
+        # can overlap the real card, and keeping only one of them would leave the other's digits in the text.
+        cards = []
+        for i in range(len(groups)):
             b = _longest_stretch(raw, groups, (i,), len(groups), card_ok)
-            if b:
-                cards.append(b)
-                i = b[1] + 1
+            if not b:
+                continue
+            if cards and b[0] <= cards[-1][1]:
+                cards[-1] = (cards[-1][0], max(cards[-1][1], b[1]), 0)
             else:
-                i += 1
+                cards.append(b)
         gaps, prev = [], 0
         for ci, cj, _ in cards:
             out.append((base + groups[ci][0], base + groups[cj][1], "card"))
