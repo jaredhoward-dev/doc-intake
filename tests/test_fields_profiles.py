@@ -827,6 +827,19 @@ def test_ordinary_amounts_still_extract(text, want):
     ("12/31/2030", 1, 10, "date", True),         # a US date missing its first digit
     ("2030-01-14", 5, 10, "ref", True),          # "01-14" out of an ISO date
     ("Due 2030-01-14", 4, 8, "year", True),      # its year
+    # a bare digit run glued by a dash or slash to more digits is a piece of one number
+    ("Acct 12-345678", 8, 14, "count", True),
+    ("Acct 123-456-7890", 13, 17, "count", True),
+    ("Acct 123-456-7890", 5, 8, "count", True),
+    ("Acct 12/3456", 8, 12, "count", True),
+    ("Acct 2030-01-1234567", 13, 20, "count", True),
+    ("Acct 12-34-56", 11, 13, "count", True),
+    ("Acct 123-45-67", 12, 14, "count", True),
+    ("Acct 123-45-67", 9, 11, "count", True),
+    ("Total: 12.50/3.00", 13, 17, "money", False),
+    ("Invoice 12345-1", 8, 13, "count", False),
+    ("Invoice 12345-1", 8, 15, "ref", False),
+    ("Acct 12-345678.00", 8, 17, "money", False),  # an amount after a short piece keeps the money rule
     ("$1,234.56", 0, 9, "money", False),         # the whole figure
     ("-5.00", 1, 5, "money", False),             # a lone minus
     ("$5.00-$6.00", 0, 5, "money", False),       # a dash then "$": another figure, not more digits

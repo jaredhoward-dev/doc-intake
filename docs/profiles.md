@@ -89,8 +89,11 @@ longer number when, at its first or last digit, it is glued to:
 - a digit, or a dot and a digit (`...5678.00` out of `12345678.00`);
 - a comma and a thousands group, three digits and no fourth, beside a run of one to three digits that follows no dot
   (`...,567.89` out of `1,234,567.89`; `12.50,13.00` is two figures);
-- a dash or slash and a run of four or more digits that is not a whole date (`5678.00` out of `1234-5678.00`; `12.50/3.00`,
-  `Invoice 12345-1` and the range `01/01/2030-01/14/2030` keep their figures).
+- a dash or slash and a run of four or more digits that is not a whole date (`5678.00` out of `1234-5678.00`;
+  `12.50/3.00`, `Invoice 12345-1` and the range `01/01/2030-01/14/2030` keep their figures);
+- for a bare digit run (no decimals, no `$`), a dash or slash and any digits before it (`345678` out of
+  `12-345678`, `56` out of `12-34-56`), or after it a short piece that is joined on again (`123` out of
+  `123-456-7890`). `12345` in `Invoice 12345-1` keeps its short suffix apart.
 
 A figure of any type but `date` that takes part of a date on its line is a piece too, so a `year` field never takes
 `2030` out of `12/31/2030`, and nothing takes `01-14` out of `2030-01-14`. A minus before an amount (`-5.00`) and a

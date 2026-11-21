@@ -572,7 +572,10 @@ def cut_from_longer(text, s, e, ftype=None):
     - a comma and a thousands group: three digits and no fourth after the comma, with a run of one to three digits
       that follows no dot before it ("...,567.89" out of "1,234,567.89"; "12.50,13.00" is two figures);
     - a dash or slash and a run of LONG_PIECE or more digits that is not a whole date of its own ("5678.00" out of
-      "1234-5678.00"; "01/01/2030-01/14/2030" is a range of two dates).
+      "1234-5678.00"; "01/01/2030-01/14/2030" is a range of two dates). A bare digit run (no decimals, no "$") is
+      held tighter: after a dash or slash and any digits it is the end of one number ("345678" out of "12-345678",
+      "56" out of "12-34-56"), and before one it is the start of one when a short piece is followed by another
+      join ("123" out of "123-456-7890"); "12345" in "12345-1" keeps its short suffix apart.
     A figure of any type but date that takes part of a date on its line is a piece too ("2030" out of "12/31/2030",
     "01-14" out of "2030-01-14"); a date's own value is never part of one. A lone minus ("-5.00") and a "$" start
     are a figure's own."""
@@ -583,6 +586,7 @@ def cut_from_longer(text, s, e, ftype=None):
     line = text[ls:le if le >= 0 else len(text)]
     a, b = s - ls, e - ls
     dates = [m.span() for m in _RX["date"].finditer(line)]
+    bare = line[a:b].isdigit()  # a plain digit run, not an amount ("3.00", "$5") or a reference with letters
     if ftype != "date" and any(ds < b and a < de and not (a <= ds and de <= b) for ds, de in dates):
         return True
 
@@ -597,8 +601,8 @@ def cut_from_longer(text, s, e, ftype=None):
         if c == "," and run and len(run.group(1)) <= 3 and not left[:run.start()].endswith(".") \
                 and _THOUSANDS_AFTER.match(line, a):
             return True
-        if c in "-/" and run and len(run.group(1)) >= LONG_PIECE and not whole_date(run.start(), run.end()):
-            return True
+        if c in "-/" and run and (bare or len(run.group(1)) >= LONG_PIECE) and not whole_date(run.start(), run.end()):
+            return True  # a bare run after "12-" is the end of one number; an amount needs a long piece before it
     if line[b - 1].isdigit() and b < len(line):
         c = line[b]
         run = _RUN_AFTER.match(line, b + 1)
@@ -608,8 +612,10 @@ def cut_from_longer(text, s, e, ftype=None):
         if c == "," and run and len(mine.group(1)) <= 3 and not line[:mine.start()].endswith(".") \
                 and _THOUSANDS_AFTER.match(line, b + 1):
             return True
-        if c in "-/" and run and len(run.group(0)) >= LONG_PIECE and not whole_date(run.start(), run.end()):
-            return True
+        chained = run and re.match(r"[-/]\d", line[run.end():run.end() + 2])
+        if c in "-/" and run and (len(run.group(0)) >= LONG_PIECE or (bare and chained)) \
+                and not whole_date(run.start(), run.end()):
+            return True  # "123" out of "123-456-7890"; "12345" in "12345-1" keeps its short suffix apart
     return False
 
 
