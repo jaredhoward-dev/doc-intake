@@ -497,6 +497,9 @@ def raw_spans(text, quiet=None, overlong=None, glued=None):
     return out
 
 
+_PIECE = re.compile(r"[^\s.-](?:[\s\S]*[^\s.-])?")  # a leftover stretch without its edge separators
+
+
 class _Disjoint:
     """Non-overlapping (start, end) spans, with the ones overlapping a query found by bisection.
 
@@ -530,33 +533,15 @@ class _Disjoint:
 def find_spans(text):
     """Non-overlapping spans [(start, end, kind, tag)], sorted by start.
 
-    SSNs glued into a digit run go in only where they cut into nothing but a card or a number: resolved first
-    without them, a glued SSN overlapping any other span (an SSN, a long number and more digits run into an
-    e-mail's local part, read as one e-mail) is left to that span, since find_spans drops a span it can't take whole and the digits only that span
-    hid would show. The rest are added and everything is resolved again, the cards and numbers clipped around them."""
+    An SSN glued into a digit run (_glued_ssns) is hidden whole, and no tag shows any of its digits: a span it cuts
+    into (an account number running into it, an e-mail whose local part holds it) keeps only its parts outside the
+    SSN, each tagged without digits, and an SSN cut by a higher-priority span is hidden in pieces too."""
     quiet, overlong, glued = set(), set(), []
     raw = raw_spans(text, quiet, overlong, glued)
-    if not glued:
-        return _resolve(text, raw, quiet, overlong)
-    left = Counter(glued)
-    base = []
-    for c in raw:
-        if left[c]:
-            left[c] -= 1
-        else:
-            base.append(c)
-    first = [(s, e) for s, e, k, _ in _resolve(text, base, quiet, overlong) if k not in ("card", "long-number")]
-    starts, ends = [s for s, _ in first], [e for _, e in first]
-    kept = [(s, e, k) for s, e, k in glued
-            if bisect.bisect_right(ends, s) >= bisect.bisect_left(starts, e)]  # overlaps none of them
-    return _resolve(text, base + kept, quiet, overlong)
-
-
-def _resolve(text, raw, quiet, overlong):
-    """find_spans' overlap resolution: each candidate in priority order, taken where it overlaps nothing taken."""
     rank = {k: i for i, k in enumerate(PRIORITY)}
     cands = sorted(raw, key=lambda s: (rank[s[2]], s[0], -(s[1] - s[0])))
-    taken, spans = [], _Disjoint()
+    glued = set(glued)
+    taken, spans, glued_taken = [], _Disjoint(), set()
     cur = None
 
     def take(ts, te, tk, tag):
@@ -570,8 +555,21 @@ def _resolve(text, raw, quiet, overlong):
         hits = spans.overlapping(s, e)
         if not hits:
             take(s, e, k, "[CARD]" if k == "card" and ((s, e) in quiet or (s, e) in overlong) else _tag(k, text[s:e]))
+            if (s, e, k) in glued:
+                glued_taken.add((s, e))
             continue
         if k not in ("card", "long-number"):
+            if (s, e, k) in glued or any(h in glued_taken for h in hits):
+                # A glued SSN cut by a higher span, or a span cutting into a glued SSN: hide what lies outside the
+                # spans already taken, tagged without digits, so neither the SSN's digits nor the span's own stay.
+                tag = "[SECRET]" if k in HOLD_KINDS else TAGS.get(k, f"[{k.upper()}]")
+                pos = s
+                for ts, te in hits + [(e, e)]:
+                    lo, hi = max(pos, s), min(ts, e)
+                    m = _PIECE.search(text, lo, hi) if lo < hi else None
+                    if m:
+                        take(m.start(), m.end(), k, tag)
+                    pos = max(pos, te)
             continue
         # A card or number partly inside a higher-priority span (618-91-5555.5555-5555.4444 read as an SSN first):
         # hide the digits left outside it too, or the rest of the card would stay in the text. A card is counted
