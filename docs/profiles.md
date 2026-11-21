@@ -91,7 +91,8 @@ A label can be a pair `[text, index]` instead of a plain string:
 - `"before"` takes the value just before the label;
 - `"line"` owns the rest of the line, past any other labels on it. With no value on its line, it takes the
   nearest value within two non-empty lines above or below (an e-signature stamp pushes a signature's date onto
-  its own line), but never from or past another `"line"` label's line.
+  its own line), but never from or past another `"line"` label's line. A `"line"` label is refused in a
+  `per_plan` group: the value belongs to no plan.
 
 ### Options for any field
 
