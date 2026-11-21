@@ -71,7 +71,7 @@ every dot folder, so a staging folder such as `.inbox.staging/` beside the inbox
 ## Configuring a host
 
 Example profiles and a fake known-senders map are in `profiles/` (`receipt.json`, `invoice.json`,
-`senders.json`); [profiles.md](profiles.md) describes the profile format.
+`utility_bill.json`, `senders.json`); [profiles.md](profiles.md) describes the profile format.
 
 ```python
 import datetime
