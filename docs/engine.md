@@ -107,7 +107,10 @@ Read these before trusting it:
   engine: a determined local process can edit files or drive a terminal or GUI. Running the assistant as a
   separate user, with access only through a small allowlisted command, is the real boundary.
 - **Untrusted input:** every file is read in a child process capped at 1.5 GB of address space and 300 s, with OCR
-  at most 25 MP per page. A file past a cap is reported as unscreened, never passed as safe.
+  at most 25 MP per page. A file past a cap is reported as unscreened, never passed as safe. macOS does not let a
+  process lower its address-space limit, so there the child runs without the memory cap and keeps the timeout,
+  the OCR pixel cap and ImageMagick's own limits; a runaway read is stopped by the timeout or the OS, not at
+  1.5 GB. Peak memory (`scan --profile-mem`) is reported in MB on both platforms.
 
 ## Requirements
 

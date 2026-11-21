@@ -6,10 +6,10 @@ come from zxingcpp when it and Pillow are installed. Every external tool is opti
 reported as unscreened or partly read, never passed as safe.
 
 Bounds: each file is read in a forked child (run_bounded) under RLIMIT_AS (CHILD_MEM_MB, inherited by the tools it
-starts) and a wall-clock timeout (CHILD_TIMEOUT), in its own process group so a timeout kills its tools too; pages
-and images are scaled to at most MAX_OCR_PIXELS before OCR, and ImageMagick runs under MAGICK_LIMITS. Text never
-leaves this module except to the caller, which redacts it before anything is shown. Stdlib only, plus the optional
-tools.
+starts; not on macOS, which refuses it) and a wall-clock timeout (CHILD_TIMEOUT), in its own process group so a
+timeout kills its tools too; pages and images are scaled to at most MAX_OCR_PIXELS before OCR, and ImageMagick
+runs under MAGICK_LIMITS. Text never leaves this module except to the caller, which redacts it before anything is
+shown. Stdlib only, plus the optional tools.
 """
 import os
 import pickle
@@ -95,7 +95,8 @@ def read_barcodes(images):
 
 # Memory and time bounds. Each file is read (pdftotext, OCR, image conversion) in a forked child under RLIMIT_AS,
 # which its pdftoppm, tesseract and magick children inherit, and a wall-clock timeout; a file that hits either is
-# reported, never retried in a loop and never passed as safe.
+# reported, never retried in a loop and never passed as safe. macOS refuses RLIMIT_AS, so there the child runs
+# without the memory cap (cap_address_space) and keeps the other bounds.
 CHILD_MEM_MB = 1536
 CHILD_TIMEOUT = 300    # seconds per file
 MAX_OCR_PIXELS = 25_000_000   # pages and images are scaled to at most this many pixels before OCR
@@ -121,13 +122,33 @@ def child_timeout():
     return _env_int("DOC_INTAKE_CHILD_TIMEOUT", CHILD_TIMEOUT)
 
 
+def cap_address_space(nbytes):
+    """Lower this process's address-space limit (RLIMIT_AS) to nbytes; True if it applied, False if the OS refuses.
+
+    Linux applies it, and every tool the process starts inherits it. macOS raises ValueError for RLIMIT_AS, so
+    there a bounded read gets no memory cap: it still has the wall-clock timeout, the process-group kill, the
+    MemoryError handling, the OCR pixel cap (MAX_OCR_PIXELS) and ImageMagick's own limits (MAGICK_LIMITS). Only
+    that ValueError is taken as "unsupported"; any other error propagates."""
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (nbytes, nbytes))
+    except ValueError:
+        return False
+    return True
+
+
+def maxrss_mb(maxrss):
+    """A ru_maxrss value in MB, rounded to 0.1: the kernel reports bytes on macOS and kilobytes on Linux."""
+    return round(maxrss / (1 << 20 if sys.platform == "darwin" else 1 << 10), 1)
+
+
 def run_bounded(fn, *args, mem_mb=None, timeout=None):
     """Run fn(*args) in a forked child limited to mem_mb of address space (RLIMIT_AS, inherited by everything it
-    starts) and timeout seconds, in its own process group so a timeout kills its tools too.
+    starts) and timeout seconds, in its own process group so a timeout kills its tools too. Where the OS refuses
+    RLIMIT_AS (macOS), the child runs without that one cap and keeps the rest (cap_address_space).
 
     Returns (value, info): info is {"ok", "reason", "peak_rss_mb", "seconds"}; value is None unless ok. reason is
     "too large" (MemoryError, or killed by a signal), "timeout", or the exception's type name: never text from
-    the file. peak_rss_mb is the child's and its tools' peak resident memory (wait4)."""
+    the file. peak_rss_mb is the child's and its tools' peak resident memory (wait4), in MB on every platform."""
     mem = (mem_mb or child_mem_mb()) << 20
     timeout = timeout or child_timeout()
     rfd, wfd = os.pipe()
@@ -140,7 +161,7 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         try:
             os.close(rfd)
             os.setsid()
-            resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
+            cap_address_space(mem)
             try:
                 payload = ("ok", fn(*args))
             except MemoryError:
@@ -175,7 +196,7 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         except (ProcessLookupError, PermissionError):
             pass
         _, status, ru = os.wait4(pid, 0)
-    info = {"ok": False, "reason": None, "peak_rss_mb": round(ru.ru_maxrss / 1024, 1),
+    info = {"ok": False, "reason": None, "peak_rss_mb": maxrss_mb(ru.ru_maxrss),
             "seconds": round(time.monotonic() - t0, 1)}
     if timed_out:
         info["reason"] = "timeout"
