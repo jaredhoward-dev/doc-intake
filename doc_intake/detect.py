@@ -430,16 +430,24 @@ def find_spans(text):
         if k not in ("card", "long-number"):
             continue
         # A card or number partly inside a higher-priority span (618-91-5555.5555-5555.4444 read as an SSN first):
-        # hide the digits left outside it too, or the rest of the card would stay in the text.
-        pos = s
+        # hide the digits left outside it too, or the rest of the card would stay in the text. A card is counted
+        # once: its last piece is the card, earlier pieces are numbers. The tag shows the card's last four only when
+        # that piece ends where the card ends and holds all four; otherwise it is [CARD], so no digit hidden under
+        # the other span leaks through the tag.
+        pieces, pos = [], s
         for ts, te in hits + [(e, e)]:
-            piece = (max(pos, s), min(ts, e))
-            m = re.search(r"\d(?:.*\d)?", text[piece[0]:piece[1]]) if piece[0] < piece[1] else None
-            if m:  # only a piece that ends where the card ends may show the designed last four
-                tail = text[piece[0] + m.end():e].strip(" .-") == ""
-                taken.append((piece[0] + m.start(), piece[0] + m.end(), k,
-                              _tag(k, m.group(0)) if tail else TAGS["long-number"]))
+            lo, hi = max(pos, s), min(ts, e)
+            m = re.search(r"\d(?:.*\d)?", text[lo:hi]) if lo < hi else None
+            if m:
+                pieces.append((lo + m.start(), lo + m.end()))
             pos = max(pos, te)
+        for i, (ps, pe) in enumerate(pieces):
+            if k == "card" and i == len(pieces) - 1:
+                digits = re.sub(r"\D", "", text[ps:pe])
+                whole_tail = not text[pe:e].strip(" .-") and len(digits) >= 4
+                taken.append((ps, pe, "card", _tag("card", text[ps:pe]) if whole_tail else "[CARD]"))
+            else:
+                taken.append((ps, pe, "long-number", TAGS["long-number"]))
     return sorted(taken)
 
 
