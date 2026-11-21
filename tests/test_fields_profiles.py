@@ -752,3 +752,24 @@ def test_usage_values_go_through_the_detectors(monkeypatch):
     s = text.index("1,234")
     monkeypatch.setattr(detect, "find_spans", lambda t: [(s, s + 9, "account", "")] if t == text else [])
     assert _run(_one("usage", ["usage"]), text) == ({}, {"account": 1})
+
+
+def test_usage_offered_without_page_text_keeps_the_type_check():
+    """An Extraction made without its pages (a host calling offer itself) can't re-check a reading's edge on the
+    page: it keeps the value, as every type does once it matched where it was found, and the detectors still run."""
+    prof = _one("usage", ["usage"])
+    ex = fx.Extraction(prof)
+    ex.offer("g", None, None, "v", "usage", "742 kwh", 1, "usage", "x", (8, 15))
+    assert [r["value"] for r in ex.records()] == ["742 kWh"]
+    ex = fx.Extraction(prof)
+    ex.offer("g", None, None, "v", "usage", "742 kWh", 1, "usage", "x", (8, 15), [(8, 15, "account", "")])
+    assert ex.records() == [] and ex.dropped == {"account": 1}
+    # with its pages, the page decides: here the reading is the tail of a longer number, so it is never kept
+    ex = fx.Extraction(prof, pages=[(1, "Usage:  9742 kWh")])
+    ex.offer("g", None, None, "v", "usage", "742 kWh", 1, "usage", "x", (9, 16))
+    assert ex.records() == []
+
+
+def test_usage_normalize_leaves_an_unmatched_value_alone():
+    assert fx.normalize("usage", "  lots   of kWh ") == "lots of kWh"  # no figure: only the whitespace is tidied
+    assert fx.normalize("usage", "") == ""
