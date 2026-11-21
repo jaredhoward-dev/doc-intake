@@ -439,7 +439,8 @@ def cmd_wrong(args, out=print):
                        "add --plan or --row, as the command beside each value on the review page does")
     v = vals[0]
     target, old = _replace_target(p, prof["name"])  # refuses a superseded task, as fields --replaces does
-    want_prof = hashlib.sha256(open(fx.profile_path(prof["name"]), "rb").read()).hexdigest()
+    with open(fx.profile_path(prof["name"]), "rb") as f:
+        want_prof = hashlib.sha256(f.read()).hexdigest()
     if t.get("profile_sha256") and t["profile_sha256"] != want_prof:
         raise DocError(f"profile {prof['name']} changed since {name} was made: run fields --replaces on the whole "
                        "task instead")

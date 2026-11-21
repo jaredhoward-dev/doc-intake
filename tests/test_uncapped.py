@@ -7,7 +7,10 @@ import pytest
 
 import host
 from doc_intake import reader
-from helpers import CARD, FAKES, SSN, drop, rec, run  # noqa: F401  (rec is a fixture)
+import helpers
+from helpers import CARD, FAKES, SSN, drop, run
+
+rec = helpers.rec  # the shared fixture, by name for pytest
 
 NOTE = "read without a memory cap (this platform refuses it); the timeout and pixel caps still applied."
 SENTINEL = "zebrafinch"
