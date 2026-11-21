@@ -1,5 +1,5 @@
-"""A minimal CLI over a config file: `python3 -m doc_intake [--config PATH] <command>`, so the engine runs without
-writing a host.
+"""A minimal CLI over a config file: `doc-intake [--config PATH] <command>` (installed) or `python3 -m doc_intake ...`
+(from a checkout), so the engine runs without writing a host. Help and hints name the form that was run.
 
 The config is a TOML file, found by --config, else $DOC_INTAKE_CONFIG, else ./doc-intake.toml. Its keys:
 
@@ -33,7 +33,11 @@ from .scan import NO_PROFILE
 from .tasks import (_task_files, cmd_approve, cmd_cleanup, cmd_extract, cmd_fields, cmd_keep, cmd_read,
                     cmd_status)
 
-CLI = "python3 -m doc_intake"
+# The command as the user typed it, for help (argparse's prog) and the hints the engine prints (configure(cli=)).
+# main() defaults to the installed console script, which setuptools calls as main() with no arguments;
+# __main__.py passes MODULE explicitly. Each entry point says which it is, so nothing guesses from sys.argv[0].
+SCRIPT = "doc-intake"
+MODULE = "python3 -m doc_intake"
 ENV = "DOC_INTAKE_CONFIG"
 DEFAULT_NAME = "doc-intake.toml"
 KEYS = {"root", "inbox", "state", "profiles_dir", "senders_file", "model", "privacy_terms_file", "route"}
@@ -227,8 +231,9 @@ def make_privacy_terms(path):
     return terms
 
 
-def apply(settings):
-    """Reset the engine to its defaults, then configure it from loaded settings."""
+def apply(settings, prog=SCRIPT):
+    """Reset the engine to its defaults, then configure it from loaded settings; prog is the command the hints
+    name."""
     cfg = engine_config.CFG
     for k, v in vars(engine_config.Config()).items():
         setattr(cfg, k, v)
@@ -238,7 +243,7 @@ def apply(settings):
         root=lambda: root, inbox=lambda: settings["inbox"], state=settings["state"],
         profiles_dir=settings["profiles_dir"], senders_file=settings["senders_file"],
         route=make_route(settings["route"]), model=lambda: settings["model"],
-        privacy_terms=make_privacy_terms(settings["privacy_terms_file"]), cli=CLI,
+        privacy_terms=make_privacy_terms(settings["privacy_terms_file"]), cli=prog,
         root_name=f"root (set in {name})", root_missing=f"root does not exist: {root} (set in {name})",
         model_hint=f"set model in {name} or pass --model")
 
@@ -272,8 +277,8 @@ COMMANDS = {"scan": cmd_scan, "fields": cmd_fields, "preview": preview.cmd_previ
             "pairs": cmd_pairs}
 
 
-def parser():
-    ap = argparse.ArgumentParser(prog=CLI, description="Local-only document intake over a config file. "
+def parser(prog=SCRIPT):
+    ap = argparse.ArgumentParser(prog=prog, description="Local-only document intake over a config file. "
                                  f"Config: --config, else ${ENV}, else ./{DEFAULT_NAME}.")
     ap.add_argument("--config", metavar="PATH", help="the TOML config file")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
@@ -319,11 +324,13 @@ def parser():
     return ap
 
 
-def main(argv=None):
-    args = parser().parse_args(argv)
+def main(argv=None, prog=SCRIPT):
+    """Run one command; the exit status. prog is how the user ran it: SCRIPT (the default, for the console script)
+    or MODULE (from __main__.py)."""
+    args = parser(prog).parse_args(argv)
     os.umask(0o077)
     try:
-        apply(load_config(find_config(args.config)))
+        apply(load_config(find_config(args.config)), prog)
     except ConfigError as e:
         print(f"doc-intake: config: {e}", file=sys.stderr)
         return 2

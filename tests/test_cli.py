@@ -215,11 +215,11 @@ def test_end_to_end(e2e, monkeypatch, capsys):
     assert cli.main(c + ["scan"]) == 0
     out = capsys.readouterr().out
     assert "shop.txt" in out and "Spending/2030" in out and "$12.34" not in out
-    assert CFG.cli == "python3 -m doc_intake"
+    assert CFG.cli == "doc-intake"   # main()'s default: the installed console script
 
     assert cli.main(c + ["fields", "--task", "receipt", "inbox/shop.txt"]) == 0
     out = capsys.readouterr().out
-    assert "python3 -m doc_intake approve" in out and "12.34" not in out
+    assert "doc-intake approve" in out and "python3 -m" not in out and "12.34" not in out
     task = sorted((root / ".doc-intake" / "tasks").iterdir())[-1]
 
     assert cli.main(c + ["status"]) == 0
@@ -268,6 +268,59 @@ def test_main_module_runs_help():
             "runpy.run_module('doc_intake', run_name='__main__')")
     r = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0 and "--config" in r.stdout and "approve" in r.stdout
+
+
+# ---------------------------------------------------------------- the command named as it was run
+def run_module(argv, monkeypatch):
+    """__main__.py run as `python3 -m doc_intake` would, in this process; its exit status."""
+    import runpy
+    monkeypatch.setattr("sys.argv", ["doc_intake"] + argv)
+    with pytest.raises(SystemExit) as e:
+        runpy.run_module("doc_intake", run_name="__main__")
+    return e.value.code
+
+
+@pytest.mark.parametrize("entry, want, other", [("script", "doc-intake", "python3 -m doc_intake"),
+                                                ("module", "python3 -m doc_intake", None)])
+def test_help_names_how_it_was_run(entry, want, other, monkeypatch, capsys):
+    if entry == "script":
+        with pytest.raises(SystemExit) as e:
+            cli.main(["--help"])   # the console script calls main() with no prog
+        assert e.value.code == 0
+    else:
+        assert run_module(["--help"], monkeypatch) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"usage: {want} [-h]")
+    if other:
+        assert other not in out
+
+
+@pytest.mark.parametrize("entry, want", [("script", "doc-intake"), ("module", "python3 -m doc_intake")])
+def test_hints_name_how_it_was_run(entry, want, e2e, monkeypatch, capsys):
+    p, _ = e2e
+    argv = ["--config", str(p), "fields", "--task", "receipt", "inbox/shop.txt"]
+    assert (cli.main(argv) if entry == "script" else run_module(argv, monkeypatch)) == 0
+    out = capsys.readouterr().out
+    assert CFG.cli == want
+    lines = [ln for ln in out.splitlines() if " preview " in ln or " approve " in ln]
+    assert len(lines) == 3 and all(f": {want} preview " in ln or f": {want} approve " in ln for ln in lines)
+    if entry == "script":
+        assert "python3 -m doc_intake" not in out
+
+
+def test_module_end_to_end_without_install(tmp_path):
+    """A real `python -m doc_intake` from the checkout's root, found only through PYTHONPATH (no install). -I would
+    ignore PYTHONPATH too, so this uses -s -P instead: no user site-packages and no current folder on sys.path,
+    with a bare environment. Help names the -m form, and the exit status passes through sys.exit."""
+    import subprocess
+    import sys
+    env = {"PYTHONPATH": REPO, "PATH": os.defpath}
+    run = [sys.executable, "-s", "-P", "-m", "doc_intake"]
+    r = subprocess.run(run + ["--help"], cwd=REPO, env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("usage: python3 -m doc_intake [-h]") and "approve" in r.stdout
+    r = subprocess.run(run + ["status"], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 2 and r.stderr.startswith("doc-intake: config: no config file")
 
 
 def test_example_config_is_valid():
