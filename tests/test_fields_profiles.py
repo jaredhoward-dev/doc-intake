@@ -365,6 +365,79 @@ def test_contract_date_is_the_signature_date_not_the_first_payment(vehicle):
     assert got["contract_date"] == ("2031-07-11", "buyer signs")
 
 
+# E-signature stamps on the signature page, laid out the way pdftotext -layout prints them: the stamp ("DocuSigned
+# by:", the signer's name, a hex envelope ID, sometimes a timestamp) is taller than one line of text. The buyer
+# signed 07/11/2031 and the seller 07/12/2031, so a match on the seller's line shows. The first two reproduce the
+# bug: the buyer's date sat on the stamp's line above or below the label's, so "buyer signs" found nothing on its
+# line, its value-below fallback read the seller's line, and "seller signs" won with the seller's date.
+_FIRST_PAGE = ("RETAIL INSTALLMENT SALE CONTRACT\n"
+               "Number of Payments  Amount of Payments  When Payments Are Due\n"
+               "48                  $ 449.51            Monthly beginning 08/25/2031\n")
+SIGNATURE_PAGES = {
+    "date on the stamp line above": (
+        "You agree to the terms of this contract.\n"
+        "                 DocuSigned by:                          07/11/2031\n"
+        "i Buyer Signs X  Pat Example                      Date\n"
+        "                 4A3B2C1D0E9F47A8...\n"
+        "Seller Signs EXAMPLE MOTORS  Date 07/12/2031  By X [signed]\n"),
+    "date on the stamp line below": (
+        "You agree to the terms of this contract.\n"
+        "i Buyer Signs X  DocuSigned by:                   Date\n"
+        "                 Pat Example                       07/11/2031\n"
+        "                 4A3B2C1D0E9F47A8...\n"
+        "Seller Signs EXAMPLE MOTORS  Date 07/12/2031  By X [signed]\n"),
+    "both stamped, dates above": (
+        "                 DocuSigned by:                    07/11/2031\n"
+        "i Buyer Signs X  Pat Example                      Date\n"
+        "                 4A3B2C1D0E9F47A8...\n"
+        "                 DocuSigned by:                    07/12/2031\n"
+        "Seller Signs X   Example Motors                   Date\n"
+        "                 9F8E7D6C5B4A4321...\n"),
+    "both stamped, date two lines below": (
+        "Buyer Signs X    DocuSigned by:\n"
+        "                 Pat Example\n"
+        "                 4A3B2C1D0E9F47A8...                 Date 07/11/2031\n"
+        "Seller Signs X   DocuSigned by:\n"
+        "                 Example Motors\n"
+        "                 9F8E7D6C5B4A4321...                 Date 07/12/2031\n"),
+    "stamp inline": (
+        "Buyer Signs X  DocuSigned by: Pat Example 4A3B2C1D0E9F47A8B6C5D4E3F2A1B0C9  Date 07/11/2031\n"
+        "Seller Signs X  DocuSigned by: Example Motors 9F8E7D6C5B4A43210F1E2D3C4B5A6978  Date 07/12/2031\n"),
+    "stamp with a timestamp": (
+        "Buyer Signs X  DocuSigned by: Pat Example  7/11/2031 | 10:42:13 AM PDT   Date 07/11/2031\n"
+        "Seller Signs X  DocuSigned by: Example Motors  7/12/2031 | 9:01:55 AM PDT   Date 07/12/2031\n"),
+    "side by side on one line": (
+        "     DocuSigned by:                                     DocuSigned by:\n"
+        "i Buyer Signs X Pat Example  Date 07/11/2031  Co-Buyer Signs N/A Date N/A   "
+        "Seller Signs X Example Motors Date 07/12/2031\n"
+        "     4A3B2C1D0E9F47A8...                                  9F8E7D6C5B4A4321...\n"),
+    "envelope id header": (
+        "Docusign Envelope ID: 4A3B2C1D-0E9F-47A8-B6C5-D4E3F2A1B0C9\n"
+        "i Buyer Signs X Pat Example   Date 07/11/2031   Co-Buyer Signs N/A  Date N/A\n"
+        "Seller Signs X Example Motors  Date 07/12/2031  By X\n"),
+}
+
+
+@pytest.mark.parametrize("layout", sorted(SIGNATURE_PAGES))
+def test_contract_date_is_the_buyers_signature_date_under_an_e_signature_stamp(vehicle, layout):
+    recs, _, _ = fx.extract(fx.load_profile("vehicle_purchase"), [(1, _FIRST_PAGE), (5, SIGNATURE_PAGES[layout])], "x")
+    got = {r["field"]: (r["value"], r["label"], r["page"]) for r in recs}
+    assert got["contract_date"] == ("2031-07-11", "buyer signs", 5)
+    assert "4A3B2C1D" not in json.dumps(recs)
+
+
+def test_a_line_label_never_takes_a_date_from_another_signature_line(vehicle):
+    # The buyer's line has no date anywhere near it; the seller's line, just below, must not give it one.
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True}},
+            "fields": [{"group": "g", "name": "buyer_date", "type": "date", "labels": [["buyer signs", "line"]]},
+                       {"group": "g", "name": "seller_date", "type": "date", "labels": [["seller signs", "line"]]}]}
+    fx.check_profile(prof)
+    page = ("i Buyer Signs X  DocuSigned by: Pat Example         Date\n"
+            "Seller Signs EXAMPLE MOTORS  Date 07/12/2031  By X [signed]\n")
+    recs, _, _ = fx.extract(prof, [(1, page)], "x")
+    assert {r["field"]: r["value"] for r in recs} == {"seller_date": "2031-07-12"}
+
+
 # ---------------------------------------------------------------- auto_loan_statement
 def test_lender_statement_fields():
     got, recs, _ = ext("auto_loan_statement", LENDER_STATEMENT)

@@ -24,6 +24,9 @@ Per-field options for forms laid out in fixed columns (the Closing Disclosure):
   like "each" ones, never take a value from the lines below (a blank row would take the next row's);
 - a label given as [text, "line"] owns the rest of its line, past other labels on it, and needs no cell start
   ("| Buyer Signs X Date 07/11/2030" in a scanned box: the signature line's date, where "Date" alone is no label);
+  with no value on its line it takes the nearest one within two non-empty lines above or below, never on or past
+  another "line" label's line (an e-signature stamp is taller than a line of text, so its date can sit just above or
+  below; the seller's line below must not give the buyer's date), ahead of the next label but behind its own line's;
 - "each": true keeps every matching line as its own row (several "Title -" charges), not just the first;
 - "anywhere": "earliest" (dates) falls back to the earliest plausible date in the text, not the first one;
 - "link_month": 0 or 1 (dates) takes the first or last day of the month a link's query names ("...?year=2030&month=9",
@@ -828,7 +831,8 @@ def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, c
             if f.get("label_at_cell_start") and idx != "line" and not _LABEL_END.match(line[e:]):
                 continue  # a label is followed by a colon, a column gap or nothing (the value below)
             end = full_end
-            if idx == "line":  # [label, "line"]: the first value in the rest of the line, past other labels
+            own_line = idx == "line"
+            if own_line:  # [label, "line"]: the first value in the rest of the line, past other labels
                 end, idx = len(line), 0
             if cuts and f["name"] in cuts:
                 if s >= cuts[f["name"]]:
@@ -884,11 +888,52 @@ def _line(ex, fields, groups, current, lines, offs, i, pno, src, spans, order, c
                                     row)
             # One-line form rows (each, column_before) never read a value from the lines below: a blank row's
             # value would come from the next row.
-            if not got and not (len(targets) > 1) and not (f.get("each") or f.get("column_before")):
+            if not got and own_line:
+                _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order)
+            elif not got and not (len(targets) > 1) and not (f.get("each") or f.get("column_before")):
                 _below(ex, g, (targets[0] if per_plan else None), f, ftype, lines, offs, i, s, end, idx, pno,
                        label, src, spans, rank, order, row)
             if row and (g, None, row, f["name"]) in ex.values:
                 ex.rows[f["name"]] = row
+
+
+def _near(ex, fields, groups, current, g, f, ftype, lines, offs, i, pno, label, src, spans, rank, order):
+    """A [label, "line"] label with no value on its line: an e-signature stamp ("DocuSigned by:", the signer's
+    name, an envelope ID) is taller than one line of text, so the date beside the signature lands on a line just
+    above or below the label's. Take the nearest value within two non-empty lines either way, never on or past a
+    line holding another "line" label (the seller's signature line, below the buyer's), and never one that a "not"
+    or renewal word precedes on its line. The value outranks the next label's ("seller signs" after "buyer signs")
+    but not this label's own value on its line."""
+    if ftype in WHOLE:
+        return  # free text from a neighbouring line would be a guess
+
+    def stop(j):
+        return any(idx == "line" for _, _, fl in _hits(fields, groups, current, lines[j]) for _, _, idx, _ in fl)
+
+    found = []
+    for step in (-1, 1):
+        j, seen = i + step, 0
+        while 0 <= j < len(lines) and seen < 2:
+            if lines[j].strip():
+                if stop(j):
+                    break
+                seen += 1
+                for c in _cells(lines[j], offs[j]):
+                    vals = _typed(ftype, c[2])
+                    if not vals:
+                        continue
+                    before = lines[j][:c[0] - offs[j] + vals[0][0]]
+                    if any(nx.search(before) for nx in f["_not"]) or \
+                            (f.get("document_date") and _RENEWAL.search(before)):
+                        continue
+                    found.append((seen, step, c))
+                    break
+                if found and found[-1][1] == step:
+                    break
+            j += step
+    if found:
+        _, _, c = min(found, key=lambda x: (x[0], x[1]))  # nearest; above first on a tie (the stamp's top line)
+        _take(ex, g, None, f, ftype, c, 0, pno, label, src, spans, rank + 0.5, order)
 
 
 def _take(ex, g, plan, f, ftype, cell, idx, pno, label, src, spans, rank, order, row=None):
