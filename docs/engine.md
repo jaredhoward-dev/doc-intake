@@ -14,13 +14,14 @@ accounting logic to itself.
 
 ## Status
 
-Stage 1 of a split: the engine lives inside its first host, which is private, and runs only through that host's
-CLI. The interfaces below may still change before it is published on its own.
+Stage 2: the engine runs on its own through `python3 -m doc_intake` over a TOML config ([cli.md](cli.md)), or
+inside a host that calls `configure()`. The interfaces below may still change before a packaged release.
 
 ## What it does
 
 | Module | What |
 | --- | --- |
+| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands |
 | `config.py` | `configure()`: the records root, inbox, state folder, profiles, known-senders map, routing hook, model, private terms, and the few messages that name the host's setup |
 | `places.py` | The root, inbox and state folder; private writes (folders `0700`, files `0600`, atomic); the index of what was filed or held; the access log; sha256; moves that never overwrite |
 | `detect.py` | Sensitive-value detectors and redaction: counts per kind, never values. Checksums (Luhn, ABA, VIN) cut false positives |
@@ -67,6 +68,9 @@ extracts, review pages and the access log, all `0600`. The fingerprint walk skip
 every dot folder, so a staging folder such as `.inbox.staging/` beside the inbox is never indexed.
 
 ## Configuring a host
+
+Example profiles and a fake known-senders map are in `profiles/` (`receipt.json`, `invoice.json`,
+`senders.json`); [profiles.md](profiles.md) describes the profile format.
 
 ```python
 import engine

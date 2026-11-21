@@ -1,24 +1,27 @@
-# Handoff: continuing stage 1
+# Handoff: continuing stage 2
 
 Where things stand and how to pick the work up on another machine.
 
 ## State
 
-- `main`: README and license only.
-- The stage-1 pull request (draft): the engine as `doc_intake/`, CI, tests, these docs.
-- The engine came from its first host at that host's latest main; changes there after the copy
-  must be carried over by hand until the host pins this package instead.
+- Stage 1 (the engine as `doc_intake/`, CI, docs) is on `main`.
+- Stage 2: the engine's tests against a fake host (`tests/host.py`), example profiles (`profiles/`,
+  [profiles.md](profiles.md)) and a minimal CLI ([cli.md](cli.md)) are done or in open pull requests;
+  see the tracker issue for which.
+- The engine came from its first host; changes there after the copy must be carried over by hand
+  until the host pins this package instead. Fixes made here (bounded reads on macOS, the senders map
+  never listed as a profile) need carrying back the same way.
 
 ## Continue
 
     git clone https://github.com/jaredhoward-dev/doc-intake.git
     cd doc-intake
-    git fetch origin && git worktree add ../doc-intake-stage-1 stage-1
-    cd ../doc-intake-stage-1
+    git fetch origin && git worktree add ../doc-intake-<slug> -b <branch> origin/main
+    cd ../doc-intake-<slug>
     python3 -I -m pytest -q tests
 
-Then the next open issue, in order: port the tests against a fake host, example profiles, the
-CLI, packaging. Each is its own pull request against `stage-1` or, once stage 1 merges, `main`.
+Next: packaging (`pyproject.toml` and a `v0.1.0` tag hosts pin), then the follow-ups in
+[followups.md](followups.md). Each is its own pull request against `main`.
 
 ## Rules that travel with the code
 

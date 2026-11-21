@@ -1,16 +1,16 @@
 # Roadmap
 
-## Stage 1: the engine moves in (this pull request)
+## Stage 1: the engine moves in (done)
 
 - The engine modules as the `doc_intake` package, unchanged apart from the package name.
 - CI on synthetic data, the import allowlist, and a forbidden-terms check a host feeds its own list.
 
 ## Stage 2: usable on its own
 
-- Port the engine's tests from the first host, against a small fake host (`tests/host.py`: a
+- Done: port the engine's tests from the first host, against a small fake host (`tests/host.py`: a
   temporary records root, inbox and state folder, and example profiles under `tests/fixtures/`).
-- Example profiles (`profiles/receipt.json`, `profiles/invoice.json`) and a known-senders example
-  with fake vendors.
+- Done: example profiles (`profiles/receipt.json`, `profiles/invoice.json`) and a known-senders example
+  with fake vendors. See [docs/profiles.md](docs/profiles.md).
 - Done: a minimal CLI (`python3 -m doc_intake scan | fields | preview | approve | status | read`, plus
   `keep`, `extract`, `cleanup` and `pairs`) over a TOML config file, so it runs without writing a host.
   See [docs/cli.md](docs/cli.md).

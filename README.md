@@ -32,6 +32,9 @@ records folder, then from a checkout:
     python3 -m doc_intake fields --task receipt inbox/some-receipt.pdf
     python3 -m doc_intake status
 
+The `receipt` task is one of the example profiles in [profiles/](profiles/); [docs/profiles.md](docs/profiles.md)
+shows how to write your own.
+
 The config is found by `--config`, else `$DOC_INTAKE_CONFIG`, else `./doc-intake.toml`. You preview
 and approve in your own terminal (`preview`, then `approve`); the assistant only ever runs `read`
 with a reason. Commands, config keys and routing rules: [docs/cli.md](docs/cli.md).
