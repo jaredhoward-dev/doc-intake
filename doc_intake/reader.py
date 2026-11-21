@@ -170,13 +170,24 @@ def uncapped_reads():
     return _UNCAPPED[0]
 
 
-def _reap_by(pid, deadline):
-    """wait4's (pid, status, rusage) once the child has exited, or None if it is still running at deadline."""
+def can_wait_unreaped():
+    """True where os has waitid and WNOWAIT (Linux; macOS only on newer Pythons): run_bounded can then see the
+    child exit without reaping it."""
+    return all(hasattr(os, n) for n in ("waitid", "P_PID", "WEXITED", "WNOWAIT", "WNOHANG"))
+
+
+def _wait_exit(pid, deadline, reap=True):
+    """Wait until the child has exited, or deadline. None if it is still running then. Otherwise, with reap,
+    wait4's (pid, status, rusage) and the child is gone; without reap, True and the child stays a zombie (waitid
+    WNOWAIT), so its pid and process-group id stay reserved until a later wait4 reaps it."""
     pause = 0.001
     while True:
-        r = os.wait4(pid, os.WNOHANG)
-        if r[0]:
-            return r
+        if reap:
+            r = os.wait4(pid, os.WNOHANG)
+            if r[0]:
+                return r
+        elif os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT | os.WNOHANG) is not None:
+            return True
         left = deadline - time.monotonic()
         if left <= 0:
             return None
@@ -222,7 +233,8 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
             os._exit(code)
     os.close(wfd)
     deadline = t0 + timeout
-    chunks, timed_out, reaped = [], False, None
+    unreaped = can_wait_unreaped()
+    chunks, timed_out, exited = [], False, None
     try:
         while True:
             left = deadline - time.monotonic()
@@ -238,21 +250,23 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         if not timed_out:
             # EOF comes when the child closes the pipe, a moment before it exits. Killing the group now could
             # catch it in between (a loaded machine deschedules it there) and a finished read would look killed.
-            reaped = _reap_by(pid, deadline)
-            timed_out = reaped is None
+            exited = _wait_exit(pid, deadline, reap=not unreaped)
+            timed_out = exited is None
     finally:
         os.close(rfd)
         try:
-            # A timeout, or tools the child left behind. After _reap_by the group id stays reserved while any of
-            # them is alive (POSIX doesn't reuse it), so then this reaches only them. With none left the id is free:
-            # in the moment between the reap and this call the kernel could in theory hand it to a new process
-            # that leads a group of its own, and this would signal that group. Pids are handed out in sequence,
-            # so that needs a full wrap of the pid space within that moment. ESRCH (nothing left) and EPERM (a
-            # group that isn't ours) are both ignored.
+            # A timeout, or tools the child left behind. Until the child is reaped its pid, and so its group id,
+            # can't be handed to another process, so this reaches only the child's group. On a timeout, and where
+            # waitid takes WNOWAIT (can_wait_unreaped), the child is still unreaped here, so there is no window.
+            # Elsewhere _wait_exit has already reaped it: the group id then stays reserved only while one of its
+            # tools is alive (POSIX doesn't reuse it). With none left, in the moment between the reap and this
+            # call the kernel could in theory hand the id to a new process leading a group of its own, and this
+            # would signal that group; pids are handed out in sequence, so that needs a full wrap of the pid space
+            # within that moment. ESRCH (nothing left) and EPERM (a group that isn't ours) are both ignored.
             os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-        _, status, ru = reaped or os.wait4(pid, 0)
+        _, status, ru = exited if isinstance(exited, tuple) else os.wait4(pid, 0)  # reap, after the kill
     data = b"".join(chunks)
     capped = {b"1": True, b"0": False}.get(data[:1])
     if capped is False:
