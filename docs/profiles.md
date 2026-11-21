@@ -4,8 +4,9 @@ A profile is a JSON file that tells the engine which fields it may take out of o
 find each one. Nothing outside a profile's fields is ever returned, so the profile is also the allowlist: the
 fields it names are the only values the assistant can ever read from that kind of document.
 
-Two example profiles live in `profiles/`: `receipt.json` and `invoice.json`. Copy them as a start. This guide uses
-them as the worked examples. The code that reads profiles is `doc_intake/fields.py`; every key below is one it
+Three example profiles live in `profiles/`: `receipt.json`, `invoice.json` and `utility_bill.json`. Copy them as a
+start. This guide uses the receipt and the invoice as the worked examples; the utility bill shows a layout they
+don't (see "The utility bill example" below). The code that reads profiles is `doc_intake/fields.py`; every key below is one it
 reads.
 
 ## Pointing the engine at your profiles
@@ -89,7 +90,10 @@ A label can be a pair `[text, index]` instead of a plain string:
 - `"last"` takes the last value on the line (a total after a rate);
 - `"current"` takes the second-to-last value, `"ytd"` the last (pay stubs: this period, then year to date);
 - `"before"` takes the value just before the label;
-- `"line"` owns the rest of the line, past any other labels on it.
+- `"line"` owns the rest of the line, past any other labels on it. With no value on its line, it takes the
+  nearest value within two non-empty lines above or below (an e-signature stamp pushes a signature's date onto
+  its own line), but never from or past another `"line"` label's line. A `"line"` label is refused in a
+  `per_plan` group: the value belongs to no plan.
 
 ### Options for any field
 
@@ -110,9 +114,10 @@ A label can be a pair `[text, index]` instead of a plain string:
 | `column_before` | `"<header label>"` or `[label, n]`: ignore everything at or right of that header's column. |
 | `below_lines` | Look up to this many non-empty lines below the label instead of three. |
 | `below_values_only` | With `below_lines`: a line below counts only when it holds nothing but values. |
+| `box_row` | `true`: the value is one figure in a row of boxes under wrapped headers (a scanned Truth in Lending disclosure). The figures line (two or more cells, all values) and the lines just above it are split into columns by the widest header line; the field takes the figure in the column whose header text holds its label. A blank box, two figures in one box, or a figure astride a column edge gives nothing, never a neighbour's figure. Also allowed on a group, for all its fields. |
 | `model_from` | Take what follows a make in another field's value (needs a type registered with `model_prefix`). |
 
-The two examples use `anywhere`, `document_date`, `exclusive_label`, `label_at_cell_start`, `from`,
+The examples use `anywhere`, `document_date`, `exclusive_label`, `label_at_cell_start`, `from`,
 `known_vendor`, `range`, `link_month` and `name_date`. The rest are for forms with fixed columns and are described
 at the top of `fields.py`.
 
@@ -136,7 +141,7 @@ A host adds its own types with `fields.register_type(name, pattern)` before load
 
 ## Groups
 
-Every field belongs to a group, and `groups` must name each one. Both examples have one group with
+Every field belongs to a group, and `groups` must name each one. Each example has one group with
 `"global": true`, which is all a single-section document needs:
 
 ```json
@@ -149,7 +154,8 @@ A field's labels are looked for only while its group is the current section, or 
 
 - `words`: a line whose cell holds one of these words starts that group's section;
 - `per_plan` and `plan_markers`: a benefits-style table, where a heading row names several plans and each later
-  row gives one value per plan.
+  row gives one value per plan;
+- `box_row`: every field of the group is read as a figure in a row of boxes (see `box_row` under Fields).
 
 ## Tables
 
@@ -196,10 +202,31 @@ Neither runs for a field asking for a `kind`.
 A host may keep its own keys in a vendor entry (a filing suggestion, say) and read them with
 `fields.sender_entry(name)`. The engine ignores them, so the example map has none.
 
+## The utility bill example
+
+`utility_bill.json` takes the provider, the statement date, the service period, the due date, the amount due, the
+previous balance and the payments received. Its `never` list (account numbers, service addresses, customer names,
+meter numbers) has no field that could hold any of them, and the detectors drop an account number that lands where
+a field's value goes. It shows three things the first two examples don't:
+
+- **Values below labels.** Many bills print a row of labels with the values on the line below
+  (`Bill Date   Due Date`, then the dates). The same profile reads that layout and the labels-and-values-on-one-line
+  one; `tests/test_example_profiles.py` checks both.
+- **Separate start and end labels.** `period_start` and `period_end` take "Service From" and "Service To" as labels
+  of their own, besides the `range` and indexed labels (`["service period", 1]`) the invoice uses.
+- **`not` and a row of labels.** When a label's value sits below it, `not` is checked against the rest of the
+  label's line, the neighbouring column labels included. A `not` word that is another field's label
+  (`"due date"` on the statement date) then throws out the whole header row. The utility bill relies on longer
+  labels winning instead: "Due Date" belongs to `due_date`, so the statement date's `"date"` label never matches
+  inside it.
+
+Usage (kWh, gallons, therms) is left out: no built-in type holds a reading with its unit. A host that wants it
+registers a type with `fields.register_type` and adds the field in its own copy.
+
 ## Checking a profile
 
 - Load it: `fields.load_profile("receipt")` raises `ProfileError` on an unknown type, an unknown group or a
   duplicate field.
 - Try it on fake text: `fields.extract(profile, [(1, text)], "fake.txt")` returns the records, the dropped counts
-  and any plans. `tests/test_example_profiles.py` does this for both examples.
+  and any plans. `tests/test_example_profiles.py` does this for every example.
 - On a real document, `fields --task NAME --labels FILE` shows which labels matched where, never a value.

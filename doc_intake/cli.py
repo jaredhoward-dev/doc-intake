@@ -1,5 +1,5 @@
-"""A minimal CLI over a config file: `python3 -m doc_intake [--config PATH] <command>`, so the engine runs without
-writing a host.
+"""A minimal CLI over a config file: `doc-intake [--config PATH] <command>` (installed) or `python3 -m doc_intake ...`
+(from a checkout), so the engine runs without writing a host. Help and hints name the form that was run.
 
 The config is a TOML file, found by --config, else $DOC_INTAKE_CONFIG, else ./doc-intake.toml. Its keys:
 
@@ -25,15 +25,19 @@ import string
 import sys
 import tomllib
 
-from . import config as engine_config, fields as fx, pairs, preview, scan
+from . import __version__, config as engine_config, fields as fx, llm, pairs, places, preview, reader, scan
 from .dates import document_date
 from .places import DocError, clean_part, log_access, rel, state_dir
 from .reader import EXT
 from .scan import NO_PROFILE
 from .tasks import (_task_files, cmd_approve, cmd_cleanup, cmd_extract, cmd_fields, cmd_keep, cmd_read,
-                    cmd_status)
+                    cmd_status, cmd_wrong)
 
-CLI = "python3 -m doc_intake"
+# The command as the user typed it, for help (argparse's prog) and the hints the engine prints (configure(cli=)).
+# main() defaults to the installed console script, which setuptools calls as main() with no arguments;
+# __main__.py passes MODULE explicitly. Each entry point says which it is, so nothing guesses from sys.argv[0].
+SCRIPT = "doc-intake"
+MODULE = "python3 -m doc_intake"
 ENV = "DOC_INTAKE_CONFIG"
 DEFAULT_NAME = "doc-intake.toml"
 KEYS = {"root", "inbox", "state", "profiles_dir", "senders_file", "model", "privacy_terms_file", "route"}
@@ -138,6 +142,16 @@ def _rules(raw):
     return rules
 
 
+def config_source(flag=None, environ=None):
+    """How find_config finds the file, as doctor reports it: "--config", "$DOC_INTAKE_CONFIG" or "./doc-intake.toml"."""
+    environ = os.environ if environ is None else environ
+    if flag:
+        return "--config"
+    if environ.get(ENV):
+        return f"${ENV}"
+    return f"./{DEFAULT_NAME}"
+
+
 def load_config(path):
     """Parse and check the TOML file at path; a dict of plain settings (see the module docstring). ConfigError,
     naming the key, for anything missing, unknown or the wrong type."""
@@ -227,8 +241,9 @@ def make_privacy_terms(path):
     return terms
 
 
-def apply(settings):
-    """Reset the engine to its defaults, then configure it from loaded settings."""
+def apply(settings, prog=SCRIPT):
+    """Reset the engine to its defaults, then configure it from loaded settings; prog is the command the hints
+    name."""
     cfg = engine_config.CFG
     for k, v in vars(engine_config.Config()).items():
         setattr(cfg, k, v)
@@ -238,7 +253,7 @@ def apply(settings):
         root=lambda: root, inbox=lambda: settings["inbox"], state=settings["state"],
         profiles_dir=settings["profiles_dir"], senders_file=settings["senders_file"],
         route=make_route(settings["route"]), model=lambda: settings["model"],
-        privacy_terms=make_privacy_terms(settings["privacy_terms_file"]), cli=CLI,
+        privacy_terms=make_privacy_terms(settings["privacy_terms_file"]), cli=prog,
         root_name=f"root (set in {name})", root_missing=f"root does not exist: {root} (set in {name})",
         model_hint=f"set model in {name} or pass --model")
 
@@ -267,13 +282,102 @@ def cmd_pairs(args, out=print):
     return 1 if bad else 0
 
 
+# ---------------------------------------------------------------- doctor
+TOOLS = ("pdftotext", "pdftoppm", "tesseract")
+
+
+def _importable(name):
+    """True when the optional module imports (zxingcpp, PIL); nothing else is loaded or run."""
+    try:
+        __import__(name)
+    except ImportError:
+        return False
+    return True
+
+
+def _probe():
+    """The memory-cap probe's child: reads nothing, does nothing."""
+
+
+def memory_cap():
+    """True when the memory cap (RLIMIT_AS) applies on this platform, False when the OS refuses it, None when the
+    probe failed: one trivial bounded run that reads no file, with a short timeout."""
+    _, info = reader.run_bounded(_probe, timeout=10)
+    reader.reset_uncapped()   # the probe is not a read
+    return info.get("capped")
+
+
+def _found(path, kind="dir"):
+    ok = os.path.isdir(path) if kind == "dir" else os.path.isfile(path)
+    return "ok" if ok else "missing"
+
+
+def cmd_doctor(args, prog=SCRIPT, out=print):
+    """Report the setup without reading any document: Python and doc-intake versions, the config and the places it
+    names, the optional tools, whether the memory cap applies, and the local model. Read-only: it creates no folder
+    and writes no log. Exit 0 when the config loads and its root exists, 2 otherwise (missing optional tools are
+    informational)."""
+    v = sys.version_info
+    out(f"python: {v.major}.{v.minor}.{v.micro} " + ("ok" if v >= (3, 11) else "too old (3.11 or newer needed)"))
+    out(f"doc-intake: {__version__}")
+    status, model = 0, None
+    try:
+        path = find_config(args.config)
+        out(f"config: {path} (found by {config_source(args.config)})")
+        settings = load_config(path)
+        apply(settings, prog)
+        out("config loads: ok")
+        root = places.root()   # DocError naming the root when it is missing; creates nothing
+    except ConfigError as e:
+        print(f"doc-intake: config: {e}", file=sys.stderr)
+        status = 2
+    except DocError as e:   # the root is missing: the same message every other command gives
+        out("root: missing")
+        print(f"doc-intake: {e}", file=sys.stderr)
+        status, model = 2, settings["model"]
+    else:
+        out("root: ok")
+        out(f"inbox: {_found(os.path.join(root, settings['inbox']))}")
+        out(f"state folder: {_found(os.path.join(root, settings['state']))}")
+        if settings["profiles_dir"]:
+            names = fx.profile_names()
+            out(f"profiles_dir: ok ({len(names)} profile(s){': ' + ', '.join(names) if names else ''})")
+        else:
+            out("profiles_dir: not configured")
+        senders = settings["senders_file"]
+        out(f"senders_file: {_found(senders, 'file') if senders else 'not configured'}")
+        out(f"privacy_terms_file: {'configured' if settings['privacy_terms_file'] else 'not configured'}")
+        out(f"routing rules: {len(settings['route'])}")
+        model = settings["model"]
+    for tool in TOOLS:
+        out(f"{tool}: {'ok' if reader.have(tool) else 'missing'}")
+    magick = reader.magick_cmd()
+    out("imagemagick: " + ("missing" if magick is None else "ok (7)" if magick == ["magick"] else "ok (6)"))
+    out(f"zxing: {'ok' if _importable('zxingcpp') else 'missing'}")
+    out(f"pillow: {'ok' if _importable('PIL') else 'missing'}")
+    capped = memory_cap()
+    out("memory cap: " + {True: "ok", False: "not available on this platform (the OS refuses it; the timeout and "
+                                              "the other limits still apply)"}.get(capped, "unknown (probe failed)"))
+    if model is None:
+        out("model: unknown (config did not load)")
+    elif not model:
+        out("model: not configured")
+    else:
+        out(f"model: {model}")
+        if args.no_model:
+            out("model server: skipped (--no-model)")
+        else:
+            out(f"model server: {'ok' if llm.reachable() else 'not reachable on 127.0.0.1:' + str(llm.OLLAMA_PORT)}")
+    return status
+
+
 COMMANDS = {"scan": cmd_scan, "fields": cmd_fields, "preview": preview.cmd_preview, "approve": cmd_approve,
             "read": cmd_read, "keep": cmd_keep, "cleanup": cmd_cleanup, "extract": cmd_extract, "status": cmd_status,
-            "pairs": cmd_pairs}
+            "pairs": cmd_pairs, "wrong": cmd_wrong}
 
 
-def parser():
-    ap = argparse.ArgumentParser(prog=CLI, description="Local-only document intake over a config file. "
+def parser(prog=SCRIPT):
+    ap = argparse.ArgumentParser(prog=prog, description="Local-only document intake over a config file. "
                                  f"Config: --config, else ${ENV}, else ./{DEFAULT_NAME}.")
     ap.add_argument("--config", metavar="PATH", help="the TOML config file")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
@@ -303,6 +407,13 @@ def parser():
     s.add_argument("--terminal-confirm", action="store_true")
     s = sub.add_parser("keep", help="keep a task file or extract past cleanup")
     s.add_argument("target", metavar="TASK_JSON|EXTRACT")
+    s = sub.add_parser("wrong", help="the user marks one value wrong and fields re-runs that document (own terminal)")
+    s.add_argument("target", metavar="TASK_JSON")
+    s.add_argument("--doc", type=int, required=True, metavar="N", help="the card's number on the review page")
+    s.add_argument("--field", required=True, metavar="[GROUP.]FIELD")
+    s.add_argument("--plan")
+    s.add_argument("--row", type=int)
+    s.add_argument("--reason")
     s = sub.add_parser("read", help="read an approved task file or extract, with a reason (logged)")
     s.add_argument("target", metavar="TASK_JSON|EXTRACT")
     s.add_argument("--reason", required=True)
@@ -312,6 +423,8 @@ def parser():
     s.add_argument("--pages", required=True)
     s.add_argument("--llm-check", action="store_true")
     s.add_argument("--model")
+    s = sub.add_parser("doctor", help="check the config, tools, memory cap and model; reads no document")
+    s.add_argument("--no-model", action="store_true", help="skip asking the local model server")
     s = sub.add_parser("cleanup", help="delete old task files and extracts")
     s.add_argument("--task")
     s.add_argument("--older-than", type=int, default=30, metavar="DAYS")
@@ -319,11 +432,15 @@ def parser():
     return ap
 
 
-def main(argv=None):
-    args = parser().parse_args(argv)
+def main(argv=None, prog=SCRIPT):
+    """Run one command; the exit status. prog is how the user ran it: SCRIPT (the default, for the console script)
+    or MODULE (from __main__.py)."""
+    args = parser(prog).parse_args(argv)
     os.umask(0o077)
+    if args.cmd == "doctor":
+        return cmd_doctor(args, prog)
     try:
-        apply(load_config(find_config(args.config)))
+        apply(load_config(find_config(args.config)), prog)
     except ConfigError as e:
         print(f"doc-intake: config: {e}", file=sys.stderr)
         return 2

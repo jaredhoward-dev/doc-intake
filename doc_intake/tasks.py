@@ -5,7 +5,9 @@ in the inbox), extracts only the profile's allowlisted fields (fields.py), recor
 page (locate.py) and writes <state>/tasks/<profile>-<date>.json, unapproved. `approve` asks the user on the
 desktop (approval.py) and seals the content with a hash; `read` prints an approved, unchanged task file (or
 extract) whose source documents are unchanged, and logs the read; `status` lists task files with counts and no
-values; `keep`, `cleanup` and `extract` (a redacted extract of named pages, only when the user asks) complete it.
+values; `wrong` (the user's, in their own terminal) marks one value of one document wrong and re-runs fields for
+that document without it; `keep`, `cleanup` and `extract` (a redacted extract of named pages, only when the user
+asks) complete it.
 Stdlib only.
 """
 import datetime as dt
@@ -13,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from collections import Counter
 
 from . import approval, detect, fields as fx, llm, locate, places, preview, reader
@@ -21,7 +24,7 @@ from .dates import document_date
 from .places import DocError, clean_part, inbox, inside, load_index, log_access, rel, root, save_index, state_dir
 from .places import write_private
 
-from .scan import HELD, hold
+from .scan import HELD, Uncapped, hold
 
 WARNING = ("WARNING: redaction is pattern-based and can miss things: names, addresses and phone numbers in other\n"
            "#   layouts than the detectors know, and numbers broken up by OCR errors, are not caught. The model pass,\n"
@@ -149,6 +152,7 @@ def cmd_labels(prof, args, out=print):
     """Debug: per file and page, which profile labels and known senders matched, with line and column. Never a
     value, never the line's text: only whether a value of the field's type follows on the line or below."""
     fields = fx._compile(prof)
+    uncapped = Uncapped()
     for name in args.files:
         p = resolve_record(name)
         doc = reader.read_bounded_or_fail(p)
@@ -196,6 +200,8 @@ def cmd_labels(prof, args, out=print):
                                 + ("" if below is None else f"; below: {'yes' if below else 'no'}")
                                 + ("" if col is None else f"; in its column: {col}")
                                 + ("; date range after: yes" if rng else "") + ")")
+        uncapped.file_done()
+    uncapped.note(out)
     return 0
 
 
@@ -248,6 +254,12 @@ def offs_of(lines, i):
     return sum(len(x) + 1 for x in lines[:i])
 
 
+def _profile_sha256(name):
+    """sha256 of a profile file's bytes: a task records it, so a changed profile is noticed."""
+    with open(fx.profile_path(name), "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
 def cmd_fields(args, out=print):
     prof = fx.load_profile(args.task)
     if getattr(args, "labels", False):
@@ -255,17 +267,21 @@ def cmd_fields(args, out=print):
     target, old = _replace_target(args.replaces, prof["name"]) if getattr(args, "replaces", None) else (None, None)
     allowed = fx.allowed_fields(prof)
     task = {"task": prof["name"], "created": dt.datetime.now().isoformat(timespec="seconds"), "approved": False,
-            "keep": False, "profile_sha256": hashlib.sha256(
-                open(fx.profile_path(prof["name"]), "rb").read()).hexdigest(),
+            "keep": False, "profile_sha256": _profile_sha256(prof["name"]),
             "sources": [], "values": [], "missing": [], "dropped": {}, "model": "off"}
     model = args.model or CFG.model()
+    carried = _load_task(old or target).get("rejected", []) if target else []  # --replaces keeps marked values out
+    rejected = []
+    uncapped = Uncapped()
     for name in args.files:
         p = resolve_record(name)
         doc = reader.read_bounded_or_fail(p)
         counts = reader.sensitive_counts(doc)
         _refuse_secret(p, counts)
-        src = rel(p)
-        records, dropped, plans = fx.extract(prof, doc["pages"], src, keep_span=True)
+        src, sha = rel(p), places.sha256(p)
+        rejs = [x for x in carried if x.get("sha256") == sha]  # values the user marked wrong (wrong) stay out
+        rejected += [x for x in rejs if x not in rejected]
+        records, dropped, plans = _extract_doc(prof, doc["pages"], src, rejs)
         where, _ = reader.run_bounded(locate.locate_values, p, reader.sniff(p), doc["pages"], records)
         for i, r in enumerate(records):
             r.pop("span", None)
@@ -276,13 +292,14 @@ def cmd_fields(args, out=print):
             red_pages = [(n, detect.redact(t)[0]) for n, t in doc["pages"]]
             cands, status = llm.fill_fields(red_pages, wanted, model)
             _apply_model(prof, wanted, cands, records, plans, dropped, src)
+            records[:] = [r for r in records if not any(_is_rejected(r, x, doc["pages"]) for x in rejs)]
             task["model"] = status
             wanted = missing_fields(prof, records, plans)
         for r in records:
             if (r["group"], r["field"]) not in allowed:
                 raise DocError(f"internal: {r['group']}.{r['field']} is not in profile {prof['name']}")
         sug = CFG.route(p, reader.sniff(p), detect.redact("\n".join(t for _, t in doc["pages"]))[0])
-        task["sources"].append({"file": src, "sha256": places.sha256(p), "pages": doc["total"], "text": doc["method"],
+        task["sources"].append({"file": src, "sha256": sha, "pages": doc["total"], "text": doc["method"],
                                 "suggest": {"dest": sug["dest"], "name": sug["name"]}})
         task["values"] += records
         task["missing"] += [f"{w['group']}.{w['field']}" + (f" ({w['plan']})" if w["plan"] else "") for w in wanted]
@@ -290,6 +307,17 @@ def cmd_fields(args, out=print):
             task["dropped"][k] = task["dropped"].get(k, 0) + n
         if doc["notes"]:
             out(f"{os.path.basename(p)}: " + "; ".join(doc["notes"]))
+        uncapped.file_done()
+    if rejected:
+        task["rejected"] = rejected
+    _write_task(task, prof, target, old, out)
+    uncapped.note(out)
+    return 0
+
+
+def _write_task(task, prof, target, old, out):
+    """Write a new or re-run task (fields, fields --replaces, wrong): in place of an unapproved target, or beside an
+    approved one, which is marked superseded; then the counts line and how the user previews and approves it."""
     path = target or _task_path(prof["name"])
     if old:
         task["replaces"] = os.path.basename(old)
@@ -316,6 +344,165 @@ def cmd_fields(args, out=print):
         out(f"The user previews it in their own terminal: {CFG.cli} preview \"{os.path.basename(path)}\"")
         out(f"or as a page: {CFG.cli} preview --html \"{os.path.basename(path)}\"")
         out(f"then, once they have looked: {CFG.cli} approve \"" + os.path.basename(path) + "\"")
+    return path
+
+
+# ---------------------------------------------------------------- command: wrong
+_REJECT_KEYS = ("group", "plan", "row", "field", "page", "label")
+
+
+def _is_rejected(rec, rej, pages):
+    """True when rec is the candidate the user marked wrong: the same field, page and matched label, at the same
+    spot (its span, or for a value with none, such as a known sender, where its value first appears on the page:
+    the place locate gave it). A rejection with no spot (the value was never located) matches on the rest."""
+    if any(rec.get(k) != rej.get(k) for k in _REJECT_KEYS):
+        return False
+    a, b = locate._value_span(rec, pages), rej.get("span")
+    return not a or not b or (a[0] < b[1] and b[0] < a[1])
+
+
+def _mask(pages, rejs):
+    """pages with each rejected value's characters blanked to spaces (same length, so every other offset holds)."""
+    out = []
+    for n, text in pages:
+        for r in rejs:
+            if r.get("page") == n and r.get("span"):
+                s, e = r["span"]
+                text = text[:s] + re.sub(r"\S", " ", text[s:e]) + text[e:]
+        out.append((n, text))
+    return out
+
+
+def _extract_doc(prof, pages, src, rejs):
+    """fx.extract over one document's pages, with the values the user marked wrong kept out: each one's spot is
+    blanked first, so the extractor takes the next candidate for that field or leaves it missing, and a record that
+    still lands on one (a known sender has no spot to blank) is dropped. A record on a detector's region of the
+    unblanked text is dropped and counted, as fields does, so blanking can never let a sensitive value through."""
+    if not rejs:
+        return fx.extract(prof, pages, src, keep_span=True)
+    records, dropped, plans = fx.extract(prof, _mask(pages, rejs), src, keep_span=True)
+    spans = {n: detect.find_spans(t) for n, t in pages}
+    keep = []
+    for r in records:
+        if any(_is_rejected(r, x, pages) for x in rejs):
+            continue
+        sp = r.get("span")
+        kind = next((k for s, e, k, _ in spans.get(r["page"], []) if sp and sp[0] < e and s < sp[1]), None)
+        if kind:
+            dropped[kind] = dropped.get(kind, 0) + 1
+            continue
+        keep.append(r)
+    return keep, dropped, plans
+
+
+def _missing_list(prof, records, plans):
+    return [f"{w['group']}.{w['field']}" + (f" ({w['plan']})" if w["plan"] else "")
+            for w in missing_fields(prof, records, plans)]
+
+
+def stdin_is_tty():
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
+def cmd_wrong(args, out=print):
+    """The user marks one value of one document wrong: record it in the task (field, page, matched label and spot,
+    never the value or any text), re-run fields for that document only with that candidate kept out, and write a new
+    unapproved task in place of an unapproved one, or beside an approved one, which is superseded (as fields
+    --replaces does). The other documents' values are carried over unchanged; approval never is.
+
+    Only from the user's own terminal: stdin and stdout must both be terminals. approve has the desktop dialog as
+    its real check; wrong releases nothing and its result still needs approve, so this gate is defence in depth, but
+    stdout alone is too weak: a tool runner that can reach a controlling terminal passes it with "> /dev/tty" and
+    its own pipe on stdin. Opening /dev/tty (as approval.tty_io does) would add nothing: it only shows that a
+    controlling terminal exists, which the same process may have. Like every gate here it is a speed bump when the
+    assistant runs as the same OS user (docs/engine.md, Limits)."""
+    if not (places.is_tty() and stdin_is_tty()):  # marking a value wrong steers what fields takes: the user's call
+        raise DocError(f"wrong is for the user's own terminal, after preview; {CFG.assistant} never marks values "
+                       "wrong (it can say which one looks wrong and give the user the command)")
+    p, kind = resolve_output(args.target)
+    if kind != "task":
+        raise DocError("wrong marks a value in a task file")
+    name = os.path.basename(p)
+    t = _load_task(p)
+    prof = fx.load_profile(t.get("task", ""))
+    srcs = t.get("sources", [])
+    if not 1 <= args.doc <= len(srcs):
+        raise DocError(f"{name} has {len(srcs)} document{'s' if len(srcs) != 1 else ''}: --doc takes 1 to "
+                       f"{len(srcs)}, the card's number on the review page")
+    src = srcs[args.doc - 1]
+    dash = lambda x: str(x or "").replace("_", "-")  # noqa: E731  the page writes invoice-number for invoice_number
+    group, _, field = args.field.rpartition(".")
+    mine = [v for v in t.get("values", []) if v.get("file") == src["file"]]
+    vals = [v for v in mine if dash(v.get("field")) == dash(field) and (not group or dash(v.get("group")) == dash(group))
+            and (args.plan is None or v.get("plan") == args.plan) and (args.row is None or v.get("row") == args.row)]
+    if not vals:
+        have = sorted({f"{v['group']}.{v['field']}" for v in mine})
+        raise DocError(f"document {args.doc} of {name} has no value for {args.field} (its fields: "
+                       f"{', '.join(have) or 'none'}); a missing field can't be marked wrong")
+    if len(vals) > 1:
+        raise DocError(f"document {args.doc} of {name} has {len(vals)} values for {args.field} (one per plan or row): "
+                       "add --plan or --row, as the command beside each value on the review page does")
+    v = vals[0]
+    target, old = _replace_target(p, prof["name"])  # refuses a superseded task, as fields --replaces does
+    want_prof = _profile_sha256(prof["name"])
+    if t.get("profile_sha256") and t["profile_sha256"] != want_prof:
+        raise DocError(f"profile {prof['name']} changed since {name} was made: run fields --replaces on the whole "
+                       "task instead")
+    path = _source_path(src, load_index())
+    if not path:
+        raise DocError(f"document {args.doc} of {name} is no longer under the records folder: run fields on it again")
+    if src.get("sha256") and places.sha256(path) != src["sha256"]:
+        raise DocError(f"document {args.doc} of {name} changed since the task was made: run fields on it again")
+    pp = resolve_record(path)
+    uncapped = Uncapped()
+    doc = reader.read_bounded_or_fail(pp)
+    _refuse_secret(pp, reader.sensitive_counts(doc))
+    pages, new_src = doc["pages"], rel(pp)
+    rej = {"sha256": src["sha256"], **{k: v.get(k) for k in _REJECT_KEYS},
+           "span": (v.get("where") or {}).get("span")}
+    prior = [x for x in t.get("rejected", []) if x.get("sha256") == src["sha256"]]
+    # what this document gave before (with the earlier rejections), to take its counts out of the task's totals
+    base_recs, base_drop, base_plans = _extract_doc(prof, pages, new_src, prior)
+    recs, dropped, plans = _extract_doc(prof, pages, new_src, prior + [rej])
+    where, _ = reader.run_bounded(locate.locate_values, pp, reader.sniff(pp), pages, recs)
+    for i, r in enumerate(recs):
+        r.pop("span", None)
+        if where and where.get(i):
+            r["where"] = where[i]
+    key = ("group", "plan", "row", "field")
+    got = {tuple(r.get(k) for k in key) for r in recs}
+    for m in mine:  # values the local model filled are kept (wrong runs no model), unless marked or found again
+        if m.get("label") == "local model" and m is not v and tuple(m.get(k) for k in key) not in got:
+            recs.append({**m, "file": new_src})
+    values, placed = [], False
+    for x in t.get("values", []):
+        if x.get("file") != src["file"]:
+            values.append(x)
+        elif not placed:
+            values += recs
+            placed = True
+    missing = list(t.get("missing", []))
+    for m in _missing_list(prof, base_recs, base_plans):
+        if m in missing:
+            missing.remove(m)
+    missing += _missing_list(prof, recs, plans)
+    totals = dict(t.get("dropped", {}))
+    for k in set(totals) | set(base_drop) | set(dropped):
+        totals[k] = max(0, totals.get(k, 0) - base_drop.get(k, 0) + dropped.get(k, 0))
+    task = {k: x for k, x in t.items() if k not in approval.APPROVAL_KEYS and k != "replaces"}
+    task.update({"created": dt.datetime.now().isoformat(timespec="seconds"), "approved": False, "keep": False,
+                 "sources": [dict(s, file=new_src) if s is src else s for s in srcs], "values": values,
+                 "missing": missing, "dropped": {k: n for k, n in totals.items() if n},
+                 "rejected": t.get("rejected", []) + [rej]})
+    what = f"{v['group']}.{v['field']}" + (" (one plan)" if v.get("plan") else "") + (  # a plan's name is its words
+        f" row {v['row']}" if v.get("row") else "")
+    log_access("wrong", rel(p), f"doc={args.doc} field={what} page={v.get('page')} label={v.get('label')}",
+               getattr(args, "reason", None) or "")
+    out(f"marked wrong: {what} in document {args.doc} of {name}; fields re-ran for that document: "
+        + ("it took the next candidate" if tuple(v.get(k) for k in key) in got else "the field is now missing"))
+    uncapped.file_done()
+    _write_task(task, prof, target, old, out)
+    uncapped.note(out)
     return 0
 
 
@@ -654,6 +841,7 @@ def build_extract(p, pages, llm_check=False, model=None):
 def cmd_extract(args, out=print):
     pages = parse_pages(args.pages)
     model = args.model or CFG.model()
+    uncapped = Uncapped()
     for name in args.files:
         p = resolve_record(name)
         content, red, needs, flags, status = build_extract(p, pages, args.llm_check, model)
@@ -665,6 +853,8 @@ def cmd_extract(args, out=print):
             f"needs-review: {'yes' if needs else 'no'}; approved: no")
         out(f"The user looks at it in their own editor, then: {CFG.cli} approve \""
             + os.path.basename(dest) + "\"")
+        uncapped.file_done()
+    uncapped.note(out)
     return 0
 
 

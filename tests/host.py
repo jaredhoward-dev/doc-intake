@@ -19,7 +19,7 @@ from doc_intake.places import DocError, clean_part, log_access, rel, state_dir
 from doc_intake.reader import EXT
 from doc_intake.scan import NO_PROFILE
 from doc_intake.tasks import (_task_files, cmd_approve, cmd_cleanup, cmd_extract, cmd_fields, cmd_keep, cmd_read,
-                              cmd_status)
+                              cmd_status, cmd_wrong)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "fixtures")
@@ -152,6 +152,13 @@ def parser():
         s.add_argument("target", metavar="TASK_JSON|EXTRACT")
         if name == "approve":
             s.add_argument("--terminal-confirm", action="store_true")
+    s = sub.add_parser("wrong")
+    s.add_argument("target", metavar="TASK_JSON")
+    s.add_argument("--doc", type=int, required=True, metavar="N")
+    s.add_argument("--field", required=True, metavar="[GROUP.]FIELD")
+    s.add_argument("--plan")
+    s.add_argument("--row", type=int)
+    s.add_argument("--reason")
     s = sub.add_parser("read")
     s.add_argument("target", metavar="TASK_JSON|EXTRACT")
     s.add_argument("--reason", required=True)
@@ -176,7 +183,7 @@ def main(argv=None, ask_fn=input):
     try:
         return {"scan": cmd_scan, "fields": cmd_fields, "preview": preview.cmd_preview, "approve": cmd_approve,
                 "read": cmd_read, "keep": cmd_keep, "cleanup": cmd_cleanup, "extract": cmd_extract,
-                "status": cmd_status, "pairs": cmd_pairs}[args.cmd](args)
+                "status": cmd_status, "pairs": cmd_pairs, "wrong": cmd_wrong}[args.cmd](args)
     except (DocError, fx.ProfileError) as e:
         print(f"host: {e}", file=sys.stderr)
         return 2

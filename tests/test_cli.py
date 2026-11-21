@@ -8,7 +8,7 @@ import stat
 import pytest
 from helpers import ACCOUNT, CARD, FAKES, SSN
 
-from doc_intake import CFG, cli, llm, places, reader
+from doc_intake import CFG, cli, llm, places, reader, tasks
 from doc_intake.cli import ConfigError
 from doc_intake.scan import NO_PROFILE
 
@@ -215,11 +215,11 @@ def test_end_to_end(e2e, monkeypatch, capsys):
     assert cli.main(c + ["scan"]) == 0
     out = capsys.readouterr().out
     assert "shop.txt" in out and "Spending/2030" in out and "$12.34" not in out
-    assert CFG.cli == "python3 -m doc_intake"
+    assert CFG.cli == "doc-intake"   # main()'s default: the installed console script
 
     assert cli.main(c + ["fields", "--task", "receipt", "inbox/shop.txt"]) == 0
     out = capsys.readouterr().out
-    assert "python3 -m doc_intake approve" in out and "12.34" not in out
+    assert "doc-intake approve" in out and "python3 -m" not in out and "12.34" not in out
     task = sorted((root / ".doc-intake" / "tasks").iterdir())[-1]
 
     assert cli.main(c + ["status"]) == 0
@@ -242,6 +242,30 @@ def test_end_to_end(e2e, monkeypatch, capsys):
     assert "\tread\t" in log and "reason=test" in log
     assert mode(root / ".doc-intake" / "tasks") == 0o700
     assert mode(task) == 0o600 and mode(root / ".doc-intake" / "access.log") == 0o600
+
+
+def test_wrong_through_the_cli(e2e, monkeypatch, capsys):
+    """wrong is wired into the CLI: refused outside the user's terminal; from it, the document is read again and the
+    result is a task that is not approved, whatever the old one was."""
+    p, root = e2e
+    c = ["--config", str(p)]
+    assert cli.main(c + ["fields", "--task", "receipt", "inbox/shop.txt"]) == 0
+    task = sorted((root / ".doc-intake" / "tasks").iterdir())[-1]
+    assert approve(c + ["approve", task.name], monkeypatch) == 0
+    capsys.readouterr()
+
+    assert cli.main(c + ["wrong", task.name, "--doc", "1", "--field", "total"]) == 2
+    got = capsys.readouterr()
+    assert "own terminal" in got.err and "12.34" not in got.out + got.err   # refused, and shows nothing
+    with monkeypatch.context() as m:   # the user's terminal: like fields there, it shows the user the new values
+        m.setattr(places, "is_tty", lambda: True)
+        m.setattr(tasks, "stdin_is_tty", lambda: True)   # wrong wants stdin a terminal too
+        assert cli.main(c + ["wrong", task.name, "--doc", "1", "--field", "total", "--reason", "test"]) == 0
+    assert "marked wrong: receipt.total in document 1" in capsys.readouterr().out
+    assert cli.main(c + ["read", task.name, "--reason", "test"]) == 2   # the approved task was superseded
+    newest = task.parent / json.loads(task.read_text())["superseded_by"]
+    assert newest != task and not json.loads(newest.read_text()).get("approved")
+    assert cli.main(c + ["read", newest.name, "--reason", "test"]) == 2   # not approved: preview and approve again
 
 
 def test_read_still_needs_a_reason(e2e, capsys):
@@ -270,6 +294,59 @@ def test_main_module_runs_help():
     assert r.returncode == 0 and "--config" in r.stdout and "approve" in r.stdout
 
 
+# ---------------------------------------------------------------- the command named as it was run
+def run_module(argv, monkeypatch):
+    """__main__.py run as `python3 -m doc_intake` would, in this process; its exit status."""
+    import runpy
+    monkeypatch.setattr("sys.argv", ["doc_intake"] + argv)
+    with pytest.raises(SystemExit) as e:
+        runpy.run_module("doc_intake", run_name="__main__")
+    return e.value.code
+
+
+@pytest.mark.parametrize("entry, want, other", [("script", "doc-intake", "python3 -m doc_intake"),
+                                                ("module", "python3 -m doc_intake", None)])
+def test_help_names_how_it_was_run(entry, want, other, monkeypatch, capsys):
+    if entry == "script":
+        with pytest.raises(SystemExit) as e:
+            cli.main(["--help"])   # the console script calls main() with no prog
+        assert e.value.code == 0
+    else:
+        assert run_module(["--help"], monkeypatch) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"usage: {want} [-h]")
+    if other:
+        assert other not in out
+
+
+@pytest.mark.parametrize("entry, want", [("script", "doc-intake"), ("module", "python3 -m doc_intake")])
+def test_hints_name_how_it_was_run(entry, want, e2e, monkeypatch, capsys):
+    p, _ = e2e
+    argv = ["--config", str(p), "fields", "--task", "receipt", "inbox/shop.txt"]
+    assert (cli.main(argv) if entry == "script" else run_module(argv, monkeypatch)) == 0
+    out = capsys.readouterr().out
+    assert CFG.cli == want
+    lines = [ln for ln in out.splitlines() if " preview " in ln or " approve " in ln]
+    assert len(lines) == 3 and all(f": {want} preview " in ln or f": {want} approve " in ln for ln in lines)
+    if entry == "script":
+        assert "python3 -m doc_intake" not in out
+
+
+def test_module_end_to_end_without_install(tmp_path):
+    """A real `python -m doc_intake` from the checkout's root, found only through PYTHONPATH (no install). -I would
+    ignore PYTHONPATH too, so this uses -s -P instead: no user site-packages and no current folder on sys.path,
+    with a bare environment. Help names the -m form, and the exit status passes through sys.exit."""
+    import subprocess
+    import sys
+    env = {"PYTHONPATH": REPO, "PATH": os.defpath}
+    run = [sys.executable, "-s", "-P", "-m", "doc_intake"]
+    r = subprocess.run(run + ["--help"], cwd=REPO, env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("usage: python3 -m doc_intake [-h]") and "approve" in r.stdout
+    r = subprocess.run(run + ["status"], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 2 and r.stderr.startswith("doc-intake: config: no config file")
+
+
 def test_example_config_is_valid():
     """examples/doc-intake.toml parses, uses only known keys, and its rules compile; with the example profiles
     present it loads in full."""
@@ -279,7 +356,7 @@ def test_example_config_is_valid():
         data = tomllib.load(f)
     assert set(data) <= cli.KEYS and "root" in data
     rules = cli._rules(data["route"])
-    assert [r["category"] for r in rules] == ["invoice", "receipt"]
+    assert [r["category"] for r in rules] == ["utility", "invoice", "receipt"]
     if os.path.isfile(os.path.join(REPO, "profiles", "receipt.json")):
         assert cli.load_config(path)["profiles_dir"] == os.path.join(REPO, "profiles")
 

@@ -170,6 +170,31 @@ def uncapped_reads():
     return _UNCAPPED[0]
 
 
+def can_wait_unreaped():
+    """True where os has waitid and WNOWAIT (Linux; macOS only on newer Pythons): run_bounded can then see the
+    child exit without reaping it."""
+    return all(hasattr(os, n) for n in ("waitid", "P_PID", "WEXITED", "WNOWAIT", "WNOHANG"))
+
+
+def _wait_exit(pid, deadline, reap=True):
+    """Wait until the child has exited, or deadline. None if it is still running then. Otherwise, with reap,
+    wait4's (pid, status, rusage) and the child is gone; without reap, True and the child stays a zombie (waitid
+    WNOWAIT), so its pid and process-group id stay reserved until a later wait4 reaps it."""
+    pause = 0.001
+    while True:
+        if reap:
+            r = os.wait4(pid, os.WNOHANG)
+            if r[0]:
+                return r
+        elif os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT | os.WNOHANG) is not None:
+            return True
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return None
+        time.sleep(min(pause, left))
+        pause = min(pause * 2, 0.05)
+
+
 def run_bounded(fn, *args, mem_mb=None, timeout=None):
     """Run fn(*args) in a forked child limited to mem_mb of address space (RLIMIT_AS, inherited by everything it
     starts) and timeout seconds, in its own process group so a timeout kills its tools too. Where the OS refuses
@@ -207,10 +232,12 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         finally:
             os._exit(code)
     os.close(wfd)
-    chunks, timed_out = [], False
+    deadline = t0 + timeout
+    unreaped = can_wait_unreaped()
+    chunks, timed_out, exited = [], False, None
     try:
         while True:
-            left = t0 + timeout - time.monotonic()
+            left = deadline - time.monotonic()
             if left <= 0:
                 timed_out = True
                 break
@@ -220,13 +247,26 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
                 if not b:
                     break
                 chunks.append(b)
+        if not timed_out:
+            # EOF comes when the child closes the pipe, a moment before it exits. Killing the group now could
+            # catch it in between (a loaded machine deschedules it there) and a finished read would look killed.
+            exited = _wait_exit(pid, deadline, reap=not unreaped)
+            timed_out = exited is None
     finally:
         os.close(rfd)
         try:
-            os.killpg(pid, signal.SIGKILL)  # a timeout, or tools the child left behind
+            # A timeout, or tools the child left behind. Until the child is reaped its pid, and so its group id,
+            # can't be handed to another process, so this reaches only the child's group. On a timeout, and where
+            # waitid takes WNOWAIT (can_wait_unreaped), the child is still unreaped here, so there is no window.
+            # Elsewhere _wait_exit has already reaped it: the group id then stays reserved only while one of its
+            # tools is alive (POSIX doesn't reuse it). With none left, in the moment between the reap and this
+            # call the kernel could in theory hand the id to a new process leading a group of its own, and this
+            # would signal that group; pids are handed out in sequence, so that needs a full wrap of the pid space
+            # within that moment. ESRCH (nothing left) and EPERM (a group that isn't ours) are both ignored.
+            os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-        _, status, ru = os.wait4(pid, 0)
+        _, status, ru = exited if isinstance(exited, tuple) else os.wait4(pid, 0)  # reap, after the kill
     data = b"".join(chunks)
     capped = {b"1": True, b"0": False}.get(data[:1])
     if capped is False:

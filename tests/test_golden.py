@@ -78,7 +78,8 @@ def _page_summary(html):
     badges = re.findall(r'<span class="badge [^"]+">([^<]+)</span>', html)
     out = {"cards": len(cards), "open": sum(1 for c in cards if c), "badges": sorted(badges),
            "check_warn": html.count('class="check-warn"'), "pair_alert": 'class="alert"' in html,
-           "approve_hint": bool(re.search(r"<pre>python3 tests/host\.py approve ", html))}
+           "approve_hint": bool(re.search(r"<pre>python3 tests/host\.py approve ", html)),
+           "wrong_hints": len(re.findall(r'<div class="fix">wrong\? run: <code>python3 tests/host\.py wrong ', html))}
     return json.dumps(out, indent=1, sort_keys=True) + "\n"
 
 

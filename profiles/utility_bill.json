@@ -1,0 +1,142 @@
+{
+ "name": "utility_bill",
+ "description": "A utility bill (power, gas, water, internet): who sent it, the statement date, the service period, the due date, the amount due, the previous balance and the payments received. Usage is left out: no value type holds a reading with its unit. Never the account number, service address, customer name or meter number.",
+ "never": [
+  "account numbers",
+  "service addresses",
+  "customer names",
+  "meter numbers",
+  "card or bank numbers"
+ ],
+ "default_group": "bill",
+ "groups": {
+  "bill": {
+   "global": true
+  }
+ },
+ "fields": [
+  {
+   "group": "bill",
+   "name": "provider",
+   "type": "org_name",
+   "labels": [
+    "provider",
+    "from"
+   ],
+   "label_at_cell_start": true,
+   "from": "top",
+   "known_vendor": true,
+   "required": true
+  },
+  {
+   "group": "bill",
+   "name": "statement_date",
+   "type": "date",
+   "labels": [
+    "statement date",
+    "bill date",
+    "billing date",
+    "date of bill",
+    "date mailed",
+    "date"
+   ],
+   "not": [
+    "next read",
+    "next bill",
+    "meter read"
+   ],
+   "anywhere": true,
+   "document_date": true,
+   "name_date": true,
+   "required": true
+  },
+  {
+   "group": "bill",
+   "name": "period_start",
+   "type": "date",
+   "labels": [
+    "service period",
+    "billing period",
+    "service from",
+    "period from",
+    "from date"
+   ],
+   "range": 0
+  },
+  {
+   "group": "bill",
+   "name": "period_end",
+   "type": "date",
+   "labels": [
+    [
+     "service period",
+     1
+    ],
+    [
+     "billing period",
+     1
+    ],
+    "service to",
+    "period to",
+    "to date",
+    "through"
+   ],
+   "range": 1
+  },
+  {
+   "group": "bill",
+   "name": "due_date",
+   "type": "date",
+   "labels": [
+    "due date",
+    "date due",
+    "payment due",
+    "pay by",
+    "due by"
+   ],
+   "required": true
+  },
+  {
+   "group": "bill",
+   "name": "amount_due",
+   "type": "money",
+   "labels": [
+    "total amount due",
+    "amount due",
+    "total due",
+    "balance due",
+    "please pay"
+   ],
+   "not": [
+    "previous",
+    "past due",
+    "last bill"
+   ],
+   "required": true
+  },
+  {
+   "group": "bill",
+   "name": "previous_balance",
+   "type": "money",
+   "labels": [
+    "previous balance",
+    "prior balance",
+    "last bill amount",
+    "balance forward",
+    "previous amount due"
+   ]
+  },
+  {
+   "group": "bill",
+   "name": "payments_received",
+   "type": "money",
+   "labels": [
+    "payments received",
+    "payment received",
+    "payments",
+    "payment - thank you",
+    "payment thank you"
+   ]
+  }
+ ]
+}

@@ -22,7 +22,7 @@ The interfaces below may still change before the tagged `v0.1.0` release.
 
 | Module | What |
 | --- | --- |
-| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands; installed as the `doc-intake` command (`doc_intake.cli:main`) |
+| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands, and `doctor`, which checks the setup without reading a document; installed as the `doc-intake` command (`doc_intake.cli:main`) |
 | `config.py` | `configure()`: the records root, inbox, state folder, profiles, known-senders map, routing hook, model, private terms, `today` (the date document dates are judged against), and the few messages that name the host's setup |
 | `places.py` | The root, inbox and state folder; private writes (folders `0700`, files `0600`, atomic); the index of what was filed or held; the access log; sha256; moves that never overwrite |
 | `detect.py` | Sensitive-value detectors and redaction: counts per kind, never values. Checksums (Luhn, ABA, VIN) cut false positives |
@@ -34,7 +34,7 @@ The interfaces below may still change before the tagged `v0.1.0` release.
 | `llm.py` | An optional pass through a local model (Ollama on `127.0.0.1` only): titles, flags, missing fields; best-effort |
 | `dates.py` | The date a document is about (payment, statement or issue date before any other), for its file name |
 | `locate.py`, `snapshots.py` | Where each value sits on its page (text-layer or OCR word boxes) and a crop of that spot with every detector region blacked out |
-| `tasks.py` | Task files: `fields`, `approve`, `status`, `read`, `keep`, `cleanup` and redacted `extract`s of named pages |
+| `tasks.py` | Task files: `fields`, `approve`, `wrong`, `status`, `read`, `keep`, `cleanup` and redacted `extract`s of named pages |
 | `approval.py` | The approval: a sha256 seal over the approved content, and the user's confirmation in a desktop dialog (or a typed-back phrase on `/dev/tty`) |
 | `preview.py` | The user's preview of a task file: in a terminal, or a self-contained review page (inline CSS and images, no scripts, nothing fetched) with a redacted crop of each value's spot on its page |
 | `pairs.py` | Invoice and receipt pairs for one charge, matched by a shared number or the same vendor within 3 days, and whether their totals agree |
@@ -49,11 +49,33 @@ The interfaces below may still change before the tagged `v0.1.0` release.
    terminal).
 4. **approve**: the user confirms in a desktop dialog; the approval stores a sha256 over the task's content and
    its sources' sha256s. With no display, `--terminal-confirm` asks for a random phrase typed back on `/dev/tty`.
+   If a value is wrong, the user runs `wrong` instead (below) and approves the new task.
 5. **read --reason**: the assistant reads an approved task file. `read` refuses one changed since approval, one
    whose source document changed, and a superseded one, and logs every read with its reason.
 
 `status` lists task files with counts and no values. `extract --pages` writes a redacted extract of named pages,
 only when the user asks for one; it is approved and read the same way.
+
+**wrong TASK_JSON --doc N --field GROUP.FIELD** (instead of approving, when a value is wrong): the user marks one
+value wrong. The review page prints this command beside every value (`--plan` and `--row` added where a field repeats;
+field names may be written with dashes). Like `approve` it runs only in the user's own terminal (stdin and stdout both terminals, so `> /dev/tty` with a
+piped stdin is refused): marking values
+wrong steers what `fields` takes, so the assistant never runs it; it can point at a value and hand the user the
+command. `wrong` adds a rejection to the task file's `rejected` list: the source's sha256, the field (group,
+plan, row, name), its page, its matched label and its character span on the page. It never stores the value or
+any text (the task file already holds the value; the span is the one `where` holds). Then it re-reads that one
+document only and extracts again with each rejected spot blanked to spaces, so the extractor takes the next
+candidate for that field by its usual rules (which can be another wrong value: the user previews it like any
+other) or leaves it missing; a record that still lands on a rejected spot (a known sender has
+no span to blank: it matches on page and label) is dropped, and one that lands on a detector's region of the
+unblanked text is dropped and counted as fields does. The other documents' values are carried over unchanged, and
+values the local model filled for that document are kept unless marked (`wrong` runs no model). The result is a
+new, unapproved task: it overwrites an unapproved task in place, and an approved one is kept, marked superseded
+and replaced by a `-vN` file, exactly as `fields --replaces` does. Approval never carries over: the user previews
+and approves again. Rejections accumulate across `wrong` runs, and `fields --replaces` keeps applying them to a
+document of the same sha256. `wrong` refuses a superseded task, a document that changed or left the records
+folder since, and a task whose profile changed since (run `fields --replaces` on the whole task instead); the
+access log gets a `wrong` line with the document number, field, page and label, and `--reason` when given.
 
 ## The inbox contract
 
@@ -71,7 +93,7 @@ every dot folder, so a staging folder such as `.inbox.staging/` beside the inbox
 ## Configuring a host
 
 Example profiles and a fake known-senders map are in `profiles/` (`receipt.json`, `invoice.json`,
-`senders.json`); [profiles.md](profiles.md) describes the profile format.
+`utility_bill.json`, `senders.json`); [profiles.md](profiles.md) describes the profile format.
 
 ```python
 import datetime
@@ -117,7 +139,15 @@ and any accounting stay in the host.
 
 Read these before trusting it:
 
-- **Detectors are pattern-based and US-centric.** SSNs, ABA routing numbers, US phone and address layouts. Names
+- **Detectors are pattern-based and US-centric.** SSNs, ABA routing numbers, US phone and address layouts. Card
+  numbers are found as plain digits, grouped with spaces or dashes, or in dotted card groups (4-4-4-4, 4-6-5,
+  4-6-4; narrow on purpose, so thousands, versions and IP addresses stay clean), all Luhn-checked. Grouped digits
+  that fail Luhn are hidden as a number, so a dotted 4-4-4-4 order or build number is redacted too; beside other
+  4-digit groups they are hidden when they start with a card issuer prefix (an expiry-shaped neighbour goes with
+  them), so IDs like `5100 0042 0017 0003 0001` or `4111-1111-1111-1112-0001` lose their first sixteen digits,
+  while `2030-0042-0017-0003-0001` stays clean. Not found:
+  double-space gaps, groups wrapped across lines, `/` `,` `_` separators, spaced separators (`4111 - 1111`), and
+  dotted Luhn-failing runs under 15 digits. Names
   are not detected at all. Other layouts, other countries' formats and numbers broken up by OCR errors slip
   through.
 - **The local-model pass is best-effort and nondeterministic.** It only adds flags or fills fields that are then
@@ -129,7 +159,8 @@ Read these before trusting it:
   at most 25 MP per page. A file past a cap is reported as unscreened, never passed as safe. macOS does not let a
   process lower its address-space limit, so there the child runs without the memory cap and keeps the timeout,
   the OCR pixel cap and ImageMagick's own limits; a runaway read is stopped by the timeout or the OS, not at
-  1.5 GB. `scan` says so once a run ("N files read without a memory cap ..."), and `scan --profile-mem` shows
+  1.5 GB. `scan`, `fields`, `extract` and `preview --html` each say so once, at the end of the run, with a
+  count only ("N files read without a memory cap ...", one wording: `scan.Uncapped`), and `scan --profile-mem` shows
   `mem_cap=yes` or `no` for each file it read. Peak memory (`--profile-mem`) is reported in MB on both platforms.
 
 ## Requirements

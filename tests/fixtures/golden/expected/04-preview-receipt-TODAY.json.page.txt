@@ -8,5 +8,6 @@
  "cards": 3,
  "check_warn": 0,
  "open": 3,
- "pair_alert": true
+ "pair_alert": true,
+ "wrong_hints": 13
 }

@@ -14,6 +14,7 @@ import re
 import pytest
 
 from doc_intake import detect, fields as fx
+from helpers import CARD, ROUTING, SSN
 
 # ---------------------------------------------------------------- closing_disclosure
 LOAN_ID = "9876543210"
@@ -363,6 +364,288 @@ def test_contract_date_is_the_signature_date_not_the_first_payment(vehicle):
     recs, _, _ = fx.extract(fx.load_profile("vehicle_purchase"), [(1, p1), (5, p5)], "x")
     got = {r["field"]: (r["value"], r["label"]) for r in recs}
     assert got["contract_date"] == ("2031-07-11", "buyer signs")
+
+
+# E-signature stamps on the signature page, laid out the way pdftotext -layout prints them: the stamp ("DocuSigned
+# by:", the signer's name, a hex envelope ID, sometimes a timestamp) is taller than one line of text. The buyer
+# signed 07/11/2031 and the seller 07/12/2031, so a match on the seller's line shows. The first two reproduce the
+# bug: the buyer's date sat on the stamp's line above or below the label's, so "buyer signs" found nothing on its
+# line, its value-below fallback read the seller's line, and "seller signs" won with the seller's date.
+_FIRST_PAGE = ("RETAIL INSTALLMENT SALE CONTRACT\n"
+               "Number of Payments  Amount of Payments  When Payments Are Due\n"
+               "48                  $ 449.51            Monthly beginning 08/25/2031\n")
+SIGNATURE_PAGES = {
+    "date on the stamp line above": (
+        "You agree to the terms of this contract.\n"
+        "                 DocuSigned by:                          07/11/2031\n"
+        "i Buyer Signs X  Pat Example                      Date\n"
+        "                 4A3B2C1D0E9F47A8...\n"
+        "Seller Signs EXAMPLE MOTORS  Date 07/12/2031  By X [signed]\n"),
+    "date on the stamp line below": (
+        "You agree to the terms of this contract.\n"
+        "i Buyer Signs X  DocuSigned by:                   Date\n"
+        "                 Pat Example                       07/11/2031\n"
+        "                 4A3B2C1D0E9F47A8...\n"
+        "Seller Signs EXAMPLE MOTORS  Date 07/12/2031  By X [signed]\n"),
+    "both stamped, dates above": (
+        "                 DocuSigned by:                    07/11/2031\n"
+        "i Buyer Signs X  Pat Example                      Date\n"
+        "                 4A3B2C1D0E9F47A8...\n"
+        "                 DocuSigned by:                    07/12/2031\n"
+        "Seller Signs X   Example Motors                   Date\n"
+        "                 9F8E7D6C5B4A4321...\n"),
+    "both stamped, date two lines below": (
+        "Buyer Signs X    DocuSigned by:\n"
+        "                 Pat Example\n"
+        "                 4A3B2C1D0E9F47A8...                 Date 07/11/2031\n"
+        "Seller Signs X   DocuSigned by:\n"
+        "                 Example Motors\n"
+        "                 9F8E7D6C5B4A4321...                 Date 07/12/2031\n"),
+    "stamp inline": (
+        "Buyer Signs X  DocuSigned by: Pat Example 4A3B2C1D0E9F47A8B6C5D4E3F2A1B0C9  Date 07/11/2031\n"
+        "Seller Signs X  DocuSigned by: Example Motors 9F8E7D6C5B4A43210F1E2D3C4B5A6978  Date 07/12/2031\n"),
+    "stamp with a timestamp": (
+        "Buyer Signs X  DocuSigned by: Pat Example  7/11/2031 | 10:42:13 AM PDT   Date 07/11/2031\n"
+        "Seller Signs X  DocuSigned by: Example Motors  7/12/2031 | 9:01:55 AM PDT   Date 07/12/2031\n"),
+    "side by side on one line": (
+        "     DocuSigned by:                                     DocuSigned by:\n"
+        "i Buyer Signs X Pat Example  Date 07/11/2031  Co-Buyer Signs N/A Date N/A   "
+        "Seller Signs X Example Motors Date 07/12/2031\n"
+        "     4A3B2C1D0E9F47A8...                                  9F8E7D6C5B4A4321...\n"),
+    "envelope id header": (
+        "Docusign Envelope ID: 4A3B2C1D-0E9F-47A8-B6C5-D4E3F2A1B0C9\n"
+        "i Buyer Signs X Pat Example   Date 07/11/2031   Co-Buyer Signs N/A  Date N/A\n"
+        "Seller Signs X Example Motors  Date 07/12/2031  By X\n"),
+}
+
+
+@pytest.mark.parametrize("layout", sorted(SIGNATURE_PAGES))
+def test_contract_date_is_the_buyers_signature_date_under_an_e_signature_stamp(vehicle, layout):
+    recs, _, _ = fx.extract(fx.load_profile("vehicle_purchase"), [(1, _FIRST_PAGE), (5, SIGNATURE_PAGES[layout])], "x")
+    got = {r["field"]: (r["value"], r["label"], r["page"]) for r in recs}
+    assert got["contract_date"] == ("2031-07-11", "buyer signs", 5)
+    assert "4A3B2C1D" not in json.dumps(recs)
+
+
+def test_a_line_label_never_takes_a_date_from_another_signature_line(vehicle):
+    # The buyer's line has no date anywhere near it; the seller's line, just below, must not give it one.
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True}},
+            "fields": [{"group": "g", "name": "buyer_date", "type": "date", "labels": [["buyer signs", "line"]]},
+                       {"group": "g", "name": "seller_date", "type": "date", "labels": [["seller signs", "line"]]}]}
+    fx.check_profile(prof)
+    page = ("i Buyer Signs X  DocuSigned by: Pat Example         Date\n"
+            "Seller Signs EXAMPLE MOTORS  Date 07/12/2031  By X [signed]\n")
+    recs, _, _ = fx.extract(prof, [(1, page)], "x")
+    assert {r["field"]: r["value"] for r in recs} == {"seller_date": "2031-07-12"}
+
+
+# The Truth in Lending boxes as OCR gives them from a scan: each header wrapped over two or three lines, its
+# sentence below, the figure at the bottom of the box after a gap, and every line's columns a few characters off
+# the others. The value-below rule's fixed window finds none of the four figures; "box_row" does.
+TIL_BOXES = """Contract Date 07/11/2031
+NEW   2031 FORD RANGER   XLT       Business
+
+  ANNUAL            FINANCE           Amount            Total of            Total Sale
+ PERCENTAGE        CHARGE            Financed          Payments           Price
+   RATE           The dollar        The amount of      The amount you     The total cost of
+ The cost of       amount the        credit provided   will have paid     your purchase on
+your credit as    credit will        to you or on       after you have    credit, including
+ a yearly rate.    cost you.        your behalf.       made all payments  your down payment of
+                                                        as scheduled.     $2,500.00
+
+     7.25 %          $6,512.88         $30,100.00          $36,612.88         $39,112.88
+
+Your Payment Schedule Will Be:
+"""
+TIL_FIELDS = ("apr", "finance_charge", "amount_financed", "total_of_payments", "total_sale_price")
+
+
+def _til(prof, text):
+    recs, _, _ = fx.extract(prof, [(1, text)], "x.pdf", keep_span=True)
+    return {r["field"]: r for r in recs if r["field"] in TIL_FIELDS}
+
+
+def test_box_row_finds_each_figure_under_its_own_wrapped_header(vehicle):
+    got = _til(fx.load_profile("vehicle_purchase"), TIL_BOXES)
+    assert {k: (r["value"], r["label"]) for k, r in got.items()} == {
+        "apr": ("7.25 %", "annual percentage rate"),
+        "finance_charge": ("$6,512.88", "finance charge"),
+        "amount_financed": ("$30,100.00", "amount financed"),
+        "total_of_payments": ("$36,612.88", "total of payments"),
+        "total_sale_price": ("$39,112.88", "total sale price"),
+    }
+    for r in got.values():  # each value carries its place on the page, for the review page's crop
+        assert TIL_BOXES[r["span"][0]:r["span"][1]] == r["value"]
+
+
+def test_box_row_is_opt_in(vehicle):
+    prof = fx.load_profile("vehicle_purchase")
+    for f in prof["fields"]:
+        f.pop("box_row", None)
+    got = _til(prof, TIL_BOXES)  # as before the key: only the amount financed, from its sentence
+    assert {k: r["value"] for k, r in got.items()} == {"amount_financed": "$30,100.00"}
+
+
+def test_box_row_on_a_group():
+    prof = {"name": "t", "default_group": "til", "groups": {"til": {"global": True, "box_row": True}},
+            "fields": [{"group": "til", "name": n, "type": t, "labels": [lab]} for n, t, lab in (
+                ("apr", "percent", "annual percentage rate"), ("finance_charge", "money", "finance charge"),
+                ("amount_financed", "money", "amount financed"), ("total_of_payments", "money", "total of payments"),
+                ("total_sale_price", "money", "total sale price"))]}
+    fx.check_profile(prof)
+    got = _til(prof, TIL_BOXES)
+    assert [got[k]["value"] for k in TIL_FIELDS] == ["7.25 %", "$6,512.88", "$30,100.00", "$36,612.88", "$39,112.88"]
+
+
+def _figures(*cells):
+    """The figures line with each (column, text) placed at its column."""
+    line = ""
+    for col, text in cells:
+        line = line.ljust(col) + text
+    return line
+
+
+def test_box_row_never_gives_a_figure_to_a_neighbouring_header(vehicle):
+    prof = fx.load_profile("vehicle_purchase")
+    # TIL_BOXES' top header line sets the columns: cells at 2, 20, 38, 56 and 76, so edges at 14, 32.5, 50 and 70.
+    head, tail = TIL_BOXES.split("     7.25 %")
+    tail = tail.split("\n", 1)[1]
+    # The finance charge box is blank: its neighbours' figures stay theirs, and it takes none.
+    blank = head + _figures((5, "7.25 %"), (36, "$30,100.00"), (56, "$36,612.88"), (75, "$39,112.88")) + "\n" + tail
+    got = _til(prof, blank)
+    assert {k: r["value"] for k, r in got.items()} == {
+        "apr": "7.25 %", "amount_financed": "$30,100.00", "total_of_payments": "$36,612.88",
+        "total_sale_price": "$39,112.88"}
+    # A figure astride the edge between two columns belongs to neither.
+    edge = head + _figures((5, "7.25 %"), (28, "$6,512.88"), (40, "$30,100.00"), (56, "$36,612.88"),
+                           (75, "$39,112.88")) + "\n" + tail
+    got = _til(prof, edge)
+    assert "finance_charge" not in got and got["apr"]["value"] == "7.25 %"
+    assert got["amount_financed"]["value"] == "$30,100.00"
+    # Two figures under one header: neither is taken.
+    two = head + _figures((5, "7.25 %"), (15, "$6,512.88"), (26, "$612.88"), (40, "$30,100.00"), (56, "$36,612.88"),
+                          (75, "$39,112.88")) + "\n" + tail
+    got = _til(prof, two)
+    assert "finance_charge" not in got and got["total_of_payments"]["value"] == "$36,612.88"
+
+
+# ---------------------------------------------------------------- what the new rules may reach: sensitive values
+def _one(ftype, labels, **opts):
+    """A one-field profile: field "v" of type ftype in a global group."""
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True}},
+            "fields": [{"group": "g", "name": "v", "type": ftype, "labels": labels, **opts}]}
+    fx.check_profile(prof)
+    return prof
+
+
+def _run(prof, text):
+    """{field: value} and the dropped counts. Tests assert on these, never print a value."""
+    recs, dropped, _ = fx.extract(prof, [(1, text)], "x")
+    return {r["field"]: r["value"] for r in recs}, dropped
+
+
+BUYER = [["buyer signs", "line"]]
+
+
+def test_a_line_label_near_never_takes_a_sensitive_neighbour():
+    date = _one("date", BUYER)
+    assert _run(date, "Buyer Signs X  Pat Example\nDOB 07/11/1990\n") == ({}, {"dob": 1})
+    assert _run(date, "DOB 07/11/1990\nBuyer Signs X  Pat Example\n") == ({}, {"dob": 1})
+    assert _run(date, "Buyer Signs X  Pat Example\nAcct 12-31-2030\n") == ({}, {"account": 1})
+    # the label's own line has the date: the DOB below is never looked at
+    assert _run(date, "Buyer Signs X  Pat Example  Date 07/11/2031\nDOB 07/11/1990\n") == ({"v": "2031-07-11"}, {})
+    ref = _one("ref", BUYER)
+    for value, kind in ((CARD, "card"), (ROUTING, "routing"), ("VIN 1M8GDM9AXKP042788", "vin")):
+        assert _run(ref, f"Buyer Signs X\n{value}\n") == ({}, {kind: 1}), kind
+    assert _run(_one("count", BUYER), f"Buyer Signs X\nSSN {SSN}\n") == ({}, {"ssn": 1})
+
+
+def test_a_sensitive_nearest_neighbour_blanks_the_field():
+    # Fails closed: the nearest value is sensitive, so the field stays empty rather than reaching past it to a
+    # clean date further away, or to one the same distance below (above wins a tie).
+    date = _one("date", BUYER)
+    assert _run(date, "Buyer Signs X\nDOB 07/11/1990\n          07/11/2031\n") == ({}, {"dob": 1})
+    assert _run(date, "DOB 07/11/1990\nBuyer Signs X\n          07/11/2031\n") == ({}, {"dob": 1})
+
+
+def test_one_sensitive_value_reached_twice_counts_once():
+    # "sale date" (value below) and "buyer signs" (nearest line) both reach the same DOB
+    prof = _one("date", ["sale date", ["buyer signs", "line"]])
+    assert _run(prof, "Sale Date      Buyer Signs X\nDOB 07/11/1990\n") == ({}, {"dob": 1})
+
+
+def _boxes(first, second):
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"global": True, "box_row": True}},
+            "fields": [{"group": "g", "name": "first", "type": "ref", "labels": ["first box"]},
+                       {"group": "g", "name": "second", "type": "ref", "labels": ["second box"]}]}
+    fx.check_profile(prof)
+    got, dropped = _run(prof, "First Box            Second Box\n" + first.ljust(21) + second + "\n")
+    return sorted(got), dropped
+
+
+def test_box_row_never_takes_a_sensitive_figure():
+    assert _boxes(CARD, "R-55123") == (["second"], {"card": 1})
+    assert _boxes(ROUTING, "123456789") == (["second"], {"routing": 1})  # 123456789 fails the ABA check
+
+
+def test_a_dotted_card_number_is_never_a_money_value():
+    got, dropped = _run(_one("money", [["total due", "line"]]), "Total Due  4111.1111.1111.1111\n")
+    assert got == {} and dropped == {"card": 1}
+
+
+# ---------------------------------------------------------------- edge cases of the nearest-line and box rules
+def test_near_skips_not_and_renewal_words_and_looks_two_lines_only():
+    assert _run(_one("date", BUYER, **{"not": ["beginning"]}),
+                "Buyer Signs X\nMonthly beginning 08/25/2031\n") == ({}, {})
+    renewal = "Buyer Signs X\nRenewal 08/25/2031\n"
+    assert _run(_one("date", BUYER, document_date=True), renewal) == ({}, {})
+    assert _run(_one("date", BUYER), renewal) == ({"v": "2031-08-25"}, {})  # the skip is document_date's
+    date = _one("date", BUYER)
+    assert _run(date, "Buyer Signs X\nPat Example\n4A3B2C1D\n07/11/2031\n") == ({}, {})  # three lines away
+    assert _run(date, "Buyer Signs X\nPat Example\n07/11/2031\n") == ({"v": "2031-07-11"}, {})  # two
+
+
+def test_near_never_takes_free_text():
+    assert _run(_one("short_text", BUYER), "Buyer Signs X\nPat Example\n") == ({}, {})
+
+
+def test_near_prefers_the_nearer_line_and_above_on_a_tie():
+    date = _one("date", BUYER)
+    assert _run(date, "07/10/2031\nBuyer Signs X\n07/12/2031\n") == ({"v": "2031-07-10"}, {})
+    assert _run(date, "07/10/2031\nPat Example\nBuyer Signs X\n07/12/2031\n") == ({"v": "2031-07-12"}, {})
+
+
+def test_a_line_label_is_refused_in_a_per_plan_group():
+    prof = {"name": "t", "default_group": "g", "groups": {"g": {"per_plan": True}},
+            "fields": [{"group": "g", "name": "v", "type": "date", "labels": BUYER}]}
+    with pytest.raises(fx.ProfileError, match="per_plan"):
+        fx.check_profile(prof)
+
+
+def _money_boxes(n=2, box_row=True):
+    names = ("first", "second", "third")[:n]
+    return {"name": "t", "default_group": "g", "groups": {"g": {"global": True, "box_row": box_row}},
+            "fields": [{"group": "g", "name": k, "type": "money", "labels": [f"{k} box"]} for k in names]}
+
+
+def test_box_row_header_block_stops_at_eight_lines():
+    filler = "some words           more words\n"
+    page = "First Box            Second Box\n{}\n$12.00               $34.00\n"
+    assert _run(_money_boxes(), page.format(filler * 7)) == ({"first": "$12.00", "second": "$34.00"}, {})
+    assert _run(_money_boxes(), page.format(filler * 8)) == ({}, {})  # the header is the ninth line up
+
+
+def test_box_row_figures_with_no_header_above():
+    assert _run(_money_boxes(), "$12.00               $34.00\n\nFirst Box            Second Box\n") == ({}, {})
+
+
+def test_box_row_empty_box_is_not_filled_from_below():
+    page = ("First Box      Second Box      Third Box\n"
+            "the cost       the amount      the total\n"
+            "$12.00                         $56.00\n")
+    # without the key, the value-below window under "Second Box" reaches the third box's figure
+    assert _run(_money_boxes(3, box_row=False), page)[0].get("second") == "$56.00"
+    assert _run(_money_boxes(3), page) == ({"first": "$12.00", "third": "$56.00"}, {})
 
 
 # ---------------------------------------------------------------- auto_loan_statement

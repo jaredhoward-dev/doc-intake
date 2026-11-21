@@ -6,5 +6,6 @@
  "cards": 1,
  "check_warn": 0,
  "open": 1,
- "pair_alert": false
+ "pair_alert": false,
+ "wrong_hints": 17
 }

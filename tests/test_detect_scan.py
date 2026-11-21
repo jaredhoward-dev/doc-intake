@@ -7,6 +7,7 @@ Every value here is fake (see tests/helpers.py).
 import json
 import os
 import random
+import re
 import shutil
 
 import pytest
@@ -36,6 +37,10 @@ def test_approve_refuses_without_a_terminal(rec, capsys):
     (f"card {CARD}", "card"),
     (f"card {CARD_SPACED}", "card"),
     ("amex 378282246310005", "card"),
+    ("card 4111.1111.1111.1111", "card"),
+    ("card 5555.5555.5555.4444", "card"),
+    ("amex 3782.822463.10005", "card"),
+    ("Card No.6011.1111.1111.1117.", "card"),
     (f"routing {ROUTING}", "routing"),
     (f"Account number: {ACCOUNT}", "account"),
     ("Date of birth: 01/02/1980", "dob"),
@@ -88,6 +93,230 @@ def test_aba_rejects_random_digits():
     assert not detect.aba_ok("123456789") and detect.aba_ok(ROUTING)
 
 
+def test_dotted_card_needs_luhn_and_card_groups():
+    assert detect.counts(detect.find_spans("card 4111.1111.1111.1112")) == {"long-number": 1}  # fails Luhn
+    for t in ("1.234.567", "1,234.56", "$4,111.11", "v1.2.3.4", "192.168.1.1", "2030.01.05", "Total 4111.11",
+              "4111.1111", "1234.5678.90"):
+        assert detect.find_spans(t) == [], t
+    assert "card" not in detect.counts(detect.find_spans("pi 3.14159265358979"))
+    assert detect.find_spans("build 2024.1234.5678.9") == []  # dotted 13 digits failing Luhn: too short to hide
+
+
+def _card_only(text):
+    red, c = detect.redact(text)
+    return c, re.sub(r"\[CARD-last4:\d{4}\]", "", red)
+
+
+@pytest.mark.parametrize("text", [
+    "Visa,4111.1111.1111.1111,12/30",  # a CSV row with the expiry after it
+    "card 4111.1111.1111.1111.12/30",
+    "1,4111.1111.1111.1111",
+    "4111.1111 1111 1111", "4111-1111.1111-1111", "4111 1111.1111 1111",  # mixed separators
+    "card 4111 1111 1111 1111 12/30",
+    "4000.0000.0000.0000.006",  # 19-digit Visa
+    "Diners 3600.000000.0008",  # 4-6-4
+    "4222.2222.2222.2",  # 13-digit Visa, 4-4-4-1
+    "1.4111.1111.1111.1111",  # a list number glued on: the card is still cut out
+    "4111.1111.1111.1111.5",  # a trailing digit group is cut off the card
+])
+def test_card_in_a_run_of_groups_is_cut_out_and_redacted(text):
+    c, rest = _card_only(text)
+    assert c == {"card": 1}, text
+    assert not re.search(r"\d{3}", rest), text  # nothing but a stray list or expiry digit or two is left
+
+
+@pytest.mark.parametrize("text", ["4000.0000.0000.0000.007", "3782.822463.10006", "Order 2030.1111.2222.3333"])
+def test_grouped_digits_failing_luhn_are_a_number_not_a_card(text):
+    assert detect.counts(detect.find_spans(text)) == {"long-number": 1}
+
+
+@pytest.mark.parametrize("text", ["4111 1111 1111 1111 5555 5555 5555 4444",
+                                  "4111.1111.1111.1111.5555.5555.5555.4444",
+                                  "4111-1111-1111-1111,5555-5555-5555-4444"])
+def test_two_cards_in_one_run_are_both_found(text):
+    assert detect.counts(detect.find_spans(text)) == {"card": 2}  # snapshots black out find_spans once
+    red, _ = detect.redact(text)
+    assert re.fullmatch(r"\[CARD-last4:1111\][ .,-]\[CARD-last4:4444\]", red), red
+
+
+@pytest.mark.parametrize("text", ["ID-4111 1111 1111 1111", "Visa-4111 1111 1111 1111", "4111 1111 1111 1111-VISA",
+                                  "4111-1111-1111-1111-"])
+def test_card_touching_a_hyphen(text):
+    c, rest = _card_only(text)
+    assert detect.counts(detect.find_spans(text)) == {"card": 1} and c == {"card": 1}, text
+    assert not re.search(r"\d{3}", rest), text
+
+
+@pytest.mark.parametrize("text,want", [("2030-0042-0017-0003-0001", {}), ("Invoice INV-2030-0042", {}),
+                                       ("123-45-6789", {"ssn": 1}), ("800-555-0142", {"phone": 1}),
+                                       ("2030-01-05", {}), ("1.234.567", {}), ("192.168.1.1", {})])
+def test_ordinary_hyphenated_numbers_stay_clean(text, want):
+    assert detect.counts(detect.find_spans(text)) == want
+
+
+@pytest.mark.parametrize("text", ["Visa 4111 1111 1111 1112 12 30", "Exp 12 30 4111 1111 1111 1112",
+                                  "12 4111 1111 1111 1112", "1 4111-1111-1111-1112", "4111.1111.1111.1112 123"])
+def test_misread_card_beside_other_groups_is_a_number(text):
+    assert detect.counts(detect.find_spans(text)) == {"long-number": 1}
+    red, _ = detect.redact(text)
+    assert not re.search(r"\d{4}", red), text
+
+
+@pytest.mark.parametrize("text,card,want", [
+    ("2315 2594 2487 3782 822463 10005 9835", "3782 822463 10005", "[CARD-last4:0005] 9835"),  # 9835 isn't the card's
+    ("2558.4012.8888.8888.1881", "4012.8888.8888.1881", "[CARD-last4:1881]")])
+def test_valid_stretch_overlapping_a_card_leaves_nothing(text, card, want):
+    # 2315259424873782 and 2558401288888888 pass is_card by chance and overlap the real test card
+    s0 = text.index(card)
+    spans = detect.find_spans(text)
+    assert all(any(s <= k < e for s, e, _, _ in spans) for k in range(s0, s0 + len(card)) if text[k].isdigit())
+    red, c = detect.redact(text)
+    assert c == {"card": 1} and red == want
+
+
+PUBLISHED_CARDS = [(CARD, (4, 4, 4, 4)), ("5555555555554444", (4, 4, 4, 4)), ("378282246310005", (4, 6, 5)),
+                   ("6011111111111117", (4, 4, 4, 4)), ("4012888888881881", (4, 4, 4, 4))]
+
+
+def _random_groups(rng, k):
+    return ["".join(rng.choice("0123456789") for _ in range(rng.randint(1, 6))) for _ in range(k)]
+
+
+def _join(rng, parts):
+    """parts joined with a separator picked per join from ' .-'; returns (text, [(start, end) of each part])."""
+    text, where = "", []
+    for i, part in enumerate(parts):
+        if i:
+            text += rng.choice(" .-")
+        where.append((len(text), len(text) + len(part)))
+        text += part
+    return text, where
+
+
+def _card_groups(card, shape):
+    pos, out = 0, []
+    for n in shape:
+        out.append(card[pos:pos + n])
+        pos += n
+    return out
+
+
+def _covered(spans, offset, where):
+    return all(any(s <= offset + k < e for s, e, _, _ in spans) for a, z in where for k in range(a, z))
+
+
+def test_card_among_random_digit_groups_is_always_covered():
+    rng = random.Random(20301105)
+    for _ in range(2500):
+        groups = _card_groups(*rng.choice(PUBLISHED_CARDS))
+        before, after = _random_groups(rng, rng.randint(0, 4)), _random_groups(rng, rng.randint(0, 3))
+        if rng.random() < 0.5:
+            sep = rng.choice(" .-")  # one separator throughout
+            body, where = sep.join(before + groups + after), []
+            pos = len(sep.join(before)) + (len(sep) if before else 0)
+            for g in groups:
+                where.append((pos, pos + len(g)))
+                pos += len(g) + 1
+        else:  # a separator picked per join
+            body, all_where = _join(rng, before + groups + after)
+            where = all_where[len(before):len(before) + len(groups)]
+        text = "Ref " + body + " end"
+        assert _covered(detect.find_spans(text), 4, where), text
+
+
+def test_two_cards_among_random_digit_groups_are_always_covered():
+    rng = random.Random(20301106)
+    for _ in range(1500):
+        first, second = _card_groups(*rng.choice(PUBLISHED_CARDS)), _card_groups(*rng.choice(PUBLISHED_CARDS))
+        between = _random_groups(rng, rng.randint(0, 3))
+        body, where = _join(rng, first + between + second)
+        where = where[:len(first)] + where[len(first) + len(between):]
+        text = "Ref " + body + " end"
+        assert _covered(detect.find_spans(text), 4, where), text
+
+
+def test_twenty_digit_spaced_run_is_pinned():
+    # 4000 0000 0000 0000 0006: no 13-19 digit stretch passes Luhn; 4000 0000 0000 0000 is a misread with an issuer
+    # prefix, so it is hidden and the extra 0006 group is left.
+    red, c = detect.redact("4000 0000 0000 0000 0006")
+    assert c == {"long-number": 1} and red == "[NUMBER] 0006"
+
+
+def test_misread_beside_two_arbitrary_groups():
+    text = "Card 4111 1111 1111 1112 1234 5678"
+    assert detect.counts(detect.find_spans(text)) == {"long-number": 1}
+    red, _ = detect.redact(text)
+    assert "4111" not in red and "1112" not in red and red == "Card [NUMBER] 5678"  # 1234 reads as MMYY, hidden too
+
+
+def test_merged_card_span_tag():
+    # 5555555555554444 and 5555555544443972 are both cards and merge; 5555 4444 3972 9815 has a card prefix but fails
+    # Luhn, so its part past the card (9815) is hidden as a number. The tag shows the last four of the merged span.
+    text = "5555-5555-5555-4444-3972-9815"
+    c = detect.counts(detect.find_spans(text))
+    assert c == {"card": 1, "long-number": 1}
+    red, _ = detect.redact(text)
+    assert red == "[CARD-last4:3972]-[NUMBER]"
+    assert not any(v in red for v in ("5555", "4444", "9815"))
+
+
+def test_receipt_lines_stay_clean():
+    assert detect.find_spans("Store 0042 Reg 03 Trans 0017 Time 12:34 Auth 4111") == []
+    red, c = detect.redact("Total 4111 1111 1111 1111 $12.50")
+    assert c == {"card": 1} and red == "Total [CARD-last4:1111] $12.50"
+
+
+def test_card_partly_inside_a_higher_priority_span_is_still_hidden():
+    # 618-91-5555 reads as an SSN first (found by the fuzz test); the card digits outside it are hidden as well
+    red, c = detect.redact("Ref 384.932.618-91-5555.5555-5555.4444.062 end")
+    assert c == {"ssn": 1, "card": 1} and red == "Ref 384.932.[SSN].[CARD-last4:4444].062 end"
+    # the SSN takes the end of a 19-digit card: the head piece is the card's last piece, so it is the card (counted
+    # once), but it doesn't end where the card ends, so its tag shows no digits
+    red, c = detect.redact("Ref 4000 0000 0000 0000 006-12-3456 end")
+    assert c == {"card": 1, "ssn": 1} and red == "Ref [CARD] [SSN] end"
+
+
+def _luhn_complete(partial):
+    return next(partial + d for d in "0123456789" if detect.luhn_ok(partial + d))
+
+
+def test_card_cut_in_the_middle_counts_once():
+    rng = random.Random(4019)
+    for _ in range(50):
+        ssn = rng.choice(["234", "345", "456"]) + "-" + rng.choice(["12", "34", "56"]) + "-" + str(rng.randint(1000, 9999))
+        head = "4" + "".join(rng.choice("0123456789") for _ in range(3))
+        tail = "".join(rng.choice("0123456789") for _ in range(5))
+        card = _luhn_complete(head + ssn.replace("-", "") + tail)  # a 19-digit Visa
+        assert detect.is_card(card)
+        text = f"Ref {card[:4]} {ssn} {card[13:16]} {card[16:]} end"  # dddd ddd-dd-dddd ddd ddd
+        spans = detect.find_spans(text)
+        assert detect.counts(spans) == {"card": 1, "ssn": 1, "long-number": 1}, text
+        digits = [k for k, ch in enumerate(text) if ch.isdigit()]
+        assert all(any(s <= k < e for s, e, _, _ in spans) for k in digits), text
+        tags = [tag for _, _, kind, tag in spans if kind in ("card", "long-number")]
+        assert tags == ["[NUMBER]", f"[CARD-last4:{card[-4:]}]"], text  # last four only on the final piece
+    # a final piece under four digits shows no digits at all, so none hidden under the SSN leak through the tag
+    card = _luhn_complete("4123" + "234" + "56" + "7890" + "12")  # a 16-digit Visa
+    red, c = detect.redact(f"Ref {card[:4]} {card[4:7]}-{card[7:9]}-{card[9:13]} {card[13:]} end")
+    assert c == {"card": 1, "ssn": 1, "long-number": 1} and red == "Ref [NUMBER] [SSN] [CARD] end"
+
+
+def test_clip_leaves_no_digit_two_cards():
+    glued = "618" + "-91-" + "5555"
+    cards = ["5555-5555-5555-4444", "4012-8888-8888-1881"]
+    text = "Ref " + ".".join([glued, cards[0], glued, cards[1], glued]) + " end"
+    spans = detect.find_spans(text)
+    digits = [k for k, ch in enumerate(text) if ch.isdigit()]
+    assert all(any(s <= k < e for s, e, _, _ in spans) for k in digits), detect.redact(text)[0]
+    red, _ = detect.redact(text)
+    assert not any(ch.isdigit() for ch in re.sub(r"\[CARD-last4:\d{4}\]", "", red)), red
+
+
+@pytest.mark.parametrize("text", ["2030 0042 0017 0003 0001", "1234-5678-9012-3456-7890"])
+def test_more_five_group_ids_stay_clean(text):
+    assert detect.find_spans(text) == []
+
+
 def test_ssn_rules():
     assert detect.ssn_kind("000", "12", "3456") is None
     assert detect.ssn_kind("666", "12", "3456") is None
@@ -103,12 +332,18 @@ def test_plain_text_is_left_alone():
 def test_redaction_leaves_no_fake_value():
     text = "\n".join([f"SSN {SSN}", f"Card {CARD_SPACED}", f"Routing {ROUTING} Account {ACCOUNT}",
                       "DOB: 01/02/1980", f"Medicare {MBI}", "Passport No. C12345678", "Member ID: XYZ123456789",
-                      "Employee ID 00123456", f"EIN {EIN}", "someone@example.com"])
+                      "Employee ID 00123456", f"EIN {EIN}", "someone@example.com",
+                      "Visa 5555.5555.5555.4444", "Amex 3782.822463.10005",
+                      "Visa,6011.1111.1111.1117,12/30", "Mixed 5555 5555.5555-4444",
+                      "Cards 4111 1111 1111 1111 5555 5555 5555 4444", "ID-3782 822463 10005"])
     red, c = detect.redact(text)
-    for v in FAKES[:-1]:
+    for v in FAKES[:-1] + ["5555.5555", "822463", "10005", "6011", "5555 5555"]:
         assert v not in red
     assert "[CARD-last4:1111]" in red and "[ACCOUNT-last4:8901]" in red and "[SSN]" in red
-    assert c["ssn"] == 1 and c["card"] == 1
+    assert "Visa [CARD-last4:4444]\n" in red and "Amex [CARD-last4:0005]\n" in red
+    assert "Visa,[CARD-last4:1117],12/30" in red and "Mixed [CARD-last4:4444]" in red
+    assert "Cards [CARD-last4:1111] [CARD-last4:4444]" in red and red.endswith("ID-[CARD-last4:0005]")
+    assert c["ssn"] == 1 and c["card"] == 8
 
 
 # ---------------------------------------------------------------- scan and held

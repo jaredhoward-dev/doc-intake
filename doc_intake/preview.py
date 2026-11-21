@@ -18,6 +18,7 @@ from . import detect, fields as fx, places, tasks
 from .config import CFG
 from .locate import build_snapshots
 from .places import DocError, rel, root, state_dir, write_private
+from .scan import Uncapped
 
 NO_AMOUNT = "no amount found — this may be a confirmation, not a receipt"
 
@@ -89,7 +90,8 @@ a{color:inherit}.sumt td,.sumt th{white-space:nowrap}
 summary{display:block;padding:10px 0}.meta a{display:inline-block;padding:12px 4px}
 .effect{font-weight:600}.counter{font-size:1.1rem;font-weight:700}.alert{background:var(--red-bg);color:var(--red);
 border-radius:8px;padding:10px 12px;font-weight:700;margin:8px 0}.tip{color:var(--muted);font-size:.9rem}
-th[scope=row]{font-weight:600;color:var(--fg)}{extra}
+th[scope=row]{font-weight:600;color:var(--fg)}.fix{margin-top:6px;color:var(--muted);font-size:.8rem}
+.fix code{user-select:all;word-break:break-all;background:var(--code);padding:1px 4px;border-radius:4px}{extra}
 .check-warn{background:var(--amber-bg);color:var(--amber);border-radius:6px;padding:6px 8px;margin:0 0 8px}
 """
 
@@ -217,6 +219,19 @@ def _snap_html(sn, e):
     return f'<div class="why">{e(sn.get("note", ""))}</div>'
 
 
+def wrong_command(name, doc, rec):
+    """The command that marks rec, a value of the task's document number doc, wrong (tasks.cmd_wrong). Field names
+    are written with dashes (invoice-number), as the page writes no internal names; wrong takes either."""
+    import shlex
+    field = f'{rec["group"]}.{rec["field"]}'.replace("_", "-")
+    cmd = f'{CFG.cli} wrong "{name}" --doc {doc} --field {field}'
+    if rec.get("plan"):
+        cmd += " --plan " + shlex.quote(rec["plan"])
+    if rec.get("row"):
+        cmd += f" --row {rec['row']}"
+    return cmd
+
+
 def preview_html(task, name, prof=None, snaps=None, others=()):
     """A self-contained review page: inline CSS and images only, no scripts, nothing fetched. snaps: from
     build_snapshots; others: other_documents, for invoice/receipt pairs."""
@@ -246,8 +261,9 @@ def preview_html(task, name, prof=None, snaps=None, others=()):
             chk = f'<div class="check">check: {e(chk)}</div>' if chk else ""
             fname_ = " ".join(x for x in (r["plan"], f"row {r['row']}" if r.get("row") else None,
                                           plain(r["field"])) if x)
+            fix = f'<div class="fix">wrong? run: <code>{e(wrong_command(name, n, r))}</code></div>'
             rows.append(f'<tr class="{"flag" if i in fl else ""}"><th scope="row">{e(fname_)}{chk}</th>'
-                        f'<td><b>{e(r["value"])}</b>{flag}{_snap_html(sn, e)}</td><td>{e(str(r["page"]))}</td>'
+                        f'<td><b>{e(r["value"])}</b>{flag}{_snap_html(sn, e)}{fix}</td><td>{e(str(r["page"]))}</td>'
                         f'<td>{e(plain(r["label"]))}</td></tr>')
         for f in miss:
             what = NO_AMOUNT if f == "total" and money else "missing (it is needed)"
@@ -314,7 +330,9 @@ def preview_html(task, name, prof=None, snaps=None, others=()):
             + f'<h2 class="todo">Check these {opened} cards</h2><p class="note">The other {len(plan) - opened} '
             "are collapsed: open any to look.</p>" + "".join(cards) + extra
             + "<h2>Approve</h2><p class=\"note\">This page can't approve. When every value is right, run this in "
-            f"your own terminal:</p><pre>{e(approve)}</pre></main></body></html>\n")
+            f"your own terminal:</p><pre>{e(approve)}</pre><p class=\"note\">When a value is wrong, run the command "
+            "under it instead: fields reads that document again without it (taking the next match, or leaving the "
+            "field missing) and writes a new task to look at and approve.</p></main></body></html>\n")
 
 
 def preview_path(task_path):
@@ -337,6 +355,7 @@ def cmd_preview(args, out=print):
     t = tasks._load_task(p)
     if getattr(args, "html", False):
         hp = preview_path(p)
+        uncapped = Uncapped()
         snaps = build_snapshots(t)
         write_private(hp, preview_html(t, os.path.basename(p), snaps=snaps,
                                        others=other_documents(os.path.basename(p), t["task"])))
@@ -359,6 +378,7 @@ def cmd_preview(args, out=print):
         if not args.no_open and has_display():
             subprocess.Popen(["xdg-open", hp], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
+        uncapped.note(out)
         return 0
     if t.get("superseded_by"):
         out(f"note: superseded by {t['superseded_by']}; approve that one instead")
