@@ -12,6 +12,7 @@ label); street addresses are the line after an "Address:" or "Street:" label, or
 by a town and state. Redaction is pattern-based and can miss things: names are not detected, other address and
 phone layouts slip through, and OCR errors can break a number so no pattern matches it.
 """
+import bisect
 import re
 from collections import Counter
 
@@ -212,6 +213,33 @@ _VIN = re.compile(r"(?<![A-Za-z0-9])(?=[A-HJ-NPR-Z0-9]*\d)(?=[A-HJ-NPR-Z0-9]*[A-
 _VIN_LABELED = re.compile(r"(?i:\b(?:vin|vehicle\s+identification\s+(?:number|no\.?|#))(?![A-Za-z]))\W{0,40}?"
                           r"(?<![A-Za-z0-9])((?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-HJ-NPR-Z0-9]{17})(?![A-Za-z0-9])")
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_EMAIL_LOCAL = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._%+-")
+_EMAIL_DOMAIN = re.compile(r"@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+
+
+def _is_word(ch):
+    return ch.isalnum() or ch == "_"  # what \b treats as a word character in a str pattern
+
+
+def _email_spans(text):
+    """[(start, end)] of what _EMAIL.finditer matches, in linear time. The regex retries its local part from every
+    start in a long run with no @ (quadratic: about a minute on 100k dash-joined digit groups); here each @ is found
+    once, its local part is the run of local characters before it (back to the previous match), and the match starts
+    at the leftmost word boundary in that run, as the regex's leftmost match would."""
+    out, pos = [], 0
+    at = text.find("@")
+    while at != -1:
+        m = _EMAIL_DOMAIN.match(text, at)
+        if m:
+            s = at
+            while s > pos and text[s - 1] in _EMAIL_LOCAL:
+                s -= 1
+            k = next((k for k in range(s, at) if (k > 0 and _is_word(text[k - 1])) != _is_word(text[k])), None)
+            if k is not None:
+                out.append((k, m.end()))
+                pos = m.end()
+        at = text.find("@", max(at + 1, pos))
+    return out
 _LONG = re.compile(r"(?<!\d)\d{10,}(?!\d)")
 # US phone numbers: separators or parentheses required, NANP area code and exchange start 2-9
 _PHONE = re.compile(r"(?<![\w+-])(?:\+?1[\s.-]?)?(?:\([2-9]\d{2}\)\s?|[2-9]\d{2}[\s.-])[2-9]\d{2}[\s.-]\d{4}(?![\d-])")
@@ -348,9 +376,10 @@ def raw_spans(text):
 
     for rx, kind in ((_PRIVATE_KEY, "private-key"), (_API_KEY, "api-key"), (_OTP, "2fa"),
                      (_PASSWORD, "password"), (_PIN, "pin"), (_SECRET, "secret"), (_MBI, "medicare"),
-                     (_MRZ, "passport"), (_EIN, "ein"), (_EMAIL, "email")):
+                     (_MRZ, "passport"), (_EIN, "ein")):
         for m in rx.finditer(text):
             add(m, kind)
+    out.extend((s, e, "email") for s, e in _email_spans(text))
     for m in _SSN_DASHED.finditer(text):
         k = ssn_kind(*m.groups())
         if k:
@@ -417,15 +446,54 @@ def raw_spans(text):
     return out
 
 
+class _Disjoint:
+    """Non-overlapping (start, end) spans, with the ones overlapping a query found by bisection.
+
+    Since no two overlap, sorted by start their ends are sorted too, and the spans overlapping [s, e) are one
+    contiguous run. Spans settled earlier sit in one pair of lists; new ones go into a second pair (insort, which
+    mostly appends when they come in start order) until settle() merges the two. find_spans settles once per kind,
+    so the work stays near-linear; checking every taken span per candidate was quadratic in the number of hits."""
+
+    def __init__(self):
+        self.old_s, self.old_e, self.new_s, self.new_e = [], [], [], []
+
+    def add(self, s, e):
+        i = bisect.bisect_left(self.new_s, s)
+        while i < len(self.new_s) and self.new_s[i] == s and self.new_e[i] < e:
+            i += 1  # an empty span sorts before a span with the same start
+        self.new_s.insert(i, s)
+        self.new_e.insert(i, e)
+
+    def settle(self):
+        if self.new_s:
+            both = sorted(zip(self.old_s + self.new_s, self.old_e + self.new_e))
+            self.old_s, self.old_e = [a for a, _ in both], [b for _, b in both]
+            self.new_s, self.new_e = [], []
+
+    def overlapping(self, s, e):
+        """Sorted [(start, end)] of the spans with start < e and s < end."""
+        return sorted((starts[i], ends[i]) for starts, ends in ((self.old_s, self.old_e), (self.new_s, self.new_e))
+                      for i in range(bisect.bisect_right(ends, s), bisect.bisect_left(starts, e)))
+
+
 def find_spans(text):
     """Non-overlapping spans [(start, end, kind, tag)], sorted by start."""
     rank = {k: i for i, k in enumerate(PRIORITY)}
     cands = sorted(raw_spans(text), key=lambda s: (rank[s[2]], s[0], -(s[1] - s[0])))
-    taken = []
+    taken, spans = [], _Disjoint()
+    cur = None
+
+    def take(ts, te, tk, tag):
+        taken.append((ts, te, tk, tag))
+        spans.add(ts, te)
+
     for s, e, k in cands:
-        hits = sorted((ts, te) for ts, te, _, _ in taken if s < te and ts < e)
+        if rank[k] != cur:
+            spans.settle()  # a new rank: this rank's spans join the settled ones
+            cur = rank[k]
+        hits = spans.overlapping(s, e)
         if not hits:
-            taken.append((s, e, k, _tag(k, text[s:e])))
+            take(s, e, k, _tag(k, text[s:e]))
             continue
         if k not in ("card", "long-number"):
             continue
@@ -445,9 +513,9 @@ def find_spans(text):
             if k == "card" and i == len(pieces) - 1:
                 digits = re.sub(r"\D", "", text[ps:pe])
                 whole_tail = not text[pe:e].strip(" .-") and len(digits) >= 4
-                taken.append((ps, pe, "card", _tag("card", text[ps:pe]) if whole_tail else "[CARD]"))
+                take(ps, pe, "card", _tag("card", text[ps:pe]) if whole_tail else "[CARD]")
             else:
-                taken.append((ps, pe, "long-number", TAGS["long-number"]))
+                take(ps, pe, "long-number", TAGS["long-number"])
     return sorted(taken)
 
 
@@ -467,8 +535,11 @@ def redact(text, max_passes=3):
         if not spans:
             break
         total.update(k for _, _, k, _ in spans)
-        for s, e, _, tag in reversed(spans):
-            text = text[:s] + tag + text[e:]
+        parts, pos = [], 0
+        for s, e, _, tag in spans:  # one join: splicing each span into the string was quadratic in span count
+            parts += [text[pos:s], tag]
+            pos = e
+        text = "".join(parts) + text[pos:]
     return text, dict(total)
 
 
