@@ -3,11 +3,13 @@ model-made titles and guessed dates, through the fake host (tests/host.py) again
 
 The local model is a mock server on 127.0.0.1: no test talks to a real model. Every value is fake (see helpers.py).
 """
-import http.server
 import json
 import os
+import selectors
 import socket
-import threading
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -259,42 +261,86 @@ def test_cleanup(rec, capsys):
 
 
 # ---------------------------------------------------------------- the local model pass (mock server)
-class _Mock(http.server.BaseHTTPRequestHandler):
-    reply = {"spans": []}
-    raw = None
-    seen = []
+FAKE_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_model.py")
+STARTUP_SECONDS = 10
 
-    def log_message(self, *a):
-        pass
 
-    def do_GET(self):
-        self._send(200, {"models": []})
+class FakeModel:
+    """The test side of tests/fake_model.py: setting reply/raw rewrites the config file the server reads on every
+    request, and seen reads back the request bodies it recorded."""
 
-    def do_POST(self):
-        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        type(self).seen.append(body)
-        resp = type(self).raw if type(self).raw is not None else json.dumps(type(self).reply)
-        self._send(200, {"response": resp})
+    def __init__(self, workdir):
+        self._config = workdir / "config.json"
+        self._seen = workdir / "seen.jsonl"
+        self._reply, self._raw = {"spans": []}, None
+        self._write()
+        self._seen.write_text("")
 
-    def _send(self, code, obj):
-        data = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+    def _write(self):
+        self._config.write_text(json.dumps({"reply": self._reply, "raw": self._raw}))
+
+    @property
+    def reply(self):
+        return self._reply
+
+    @reply.setter
+    def reply(self, value):
+        self._reply = value
+        self._write()
+
+    @property
+    def raw(self):
+        return self._raw
+
+    @raw.setter
+    def raw(self, value):
+        self._raw = value
+        self._write()
+
+    @property
+    def seen(self):
+        return [json.loads(line) for line in self._seen.read_text().splitlines() if line]
+
+
+def _wait_for_port(proc, deadline):
+    """The port the server prints once it listens, then a connect to prove it accepts; bounded by deadline."""
+    sel = selectors.DefaultSelector()
+    sel.register(proc.stdout, selectors.EVENT_READ)
+    try:
+        if not sel.select(timeout=max(0.0, deadline - time.monotonic())):
+            raise RuntimeError("fake model server printed no port in time")
+    finally:
+        sel.close()
+    line = proc.stdout.readline()
+    if not line.strip().isdigit():
+        raise RuntimeError(f"fake model server failed to start (exit {proc.poll()})")
+    port = int(line)
+    while True:
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+            return port
+        except OSError:
+            if proc.poll() is not None or time.monotonic() > deadline:
+                raise RuntimeError("fake model server never accepted connections")
+            time.sleep(0.05)
 
 
 @pytest.fixture
-def ollama(monkeypatch):
-    """A mock model server on 127.0.0.1 and a free port; the engine is pointed at it."""
-    _Mock.reply, _Mock.raw, _Mock.seen = {"spans": []}, None, []
-    srv = http.server.HTTPServer(("127.0.0.1", 0), _Mock)
-    th = threading.Thread(target=srv.serve_forever, daemon=True)
-    th.start()
-    monkeypatch.setattr(llm, "OLLAMA_PORT", srv.server_address[1])
-    yield _Mock
-    srv.shutdown()
+def ollama(monkeypatch, tmp_path):
+    """A fake model server in its own process (tests/fake_model.py) on 127.0.0.1 and a free port; the engine is
+    pointed at it. Its own process, not a thread here, so the reader's fork() never runs in a threaded process."""
+    workdir = tmp_path / "fake-model"
+    workdir.mkdir()
+    fake = FakeModel(workdir)
+    proc = subprocess.Popen([sys.executable, "-I", FAKE_MODEL, str(workdir / "config.json"),
+                             str(workdir / "seen.jsonl")], stdout=subprocess.PIPE, text=True)
+    try:
+        monkeypatch.setattr(llm, "OLLAMA_PORT", _wait_for_port(proc, time.monotonic() + STARTUP_SECONDS))
+        yield fake
+    finally:
+        proc.kill()
+        proc.wait(timeout=STARTUP_SECONDS)
+        proc.stdout.close()
 
 
 def _free_port():
