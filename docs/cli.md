@@ -19,8 +19,12 @@ that runs the same CLI and exits with the same status:
 
 Only the `doc_intake` package is installed. The example config (`examples/doc-intake.toml`) and the example
 profiles (`profiles/`) stay in the repo: copy them next to each other (the example config points at
-`../profiles`) or change `profiles_dir` and `senders_file` to where you put them. Help and messages still
-spell the command `python3 -m doc_intake`; both forms work.
+`../profiles`) or change `profiles_dir` and `senders_file` to where you put them.
+
+Help and the hints the commands print (such as the `preview` and `approve` lines after `fields`) name the form you
+ran: `doc-intake` when run as the installed command, `python3 -m doc_intake` when run with `-m`. Each entry point
+says which it is (`__main__.py` passes `prog=MODULE` to `cli.main`, whose default is the console script), rather
+than guessing from `sys.argv[0]`. The examples below use the `-m` form.
 
 ## The config file
 
