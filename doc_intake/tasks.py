@@ -254,6 +254,12 @@ def offs_of(lines, i):
     return sum(len(x) + 1 for x in lines[:i])
 
 
+def _profile_sha256(name):
+    """sha256 of a profile file's bytes: a task records it, so a changed profile is noticed."""
+    with open(fx.profile_path(name), "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
 def cmd_fields(args, out=print):
     prof = fx.load_profile(args.task)
     if getattr(args, "labels", False):
@@ -261,8 +267,7 @@ def cmd_fields(args, out=print):
     target, old = _replace_target(args.replaces, prof["name"]) if getattr(args, "replaces", None) else (None, None)
     allowed = fx.allowed_fields(prof)
     task = {"task": prof["name"], "created": dt.datetime.now().isoformat(timespec="seconds"), "approved": False,
-            "keep": False, "profile_sha256": hashlib.sha256(
-                open(fx.profile_path(prof["name"]), "rb").read()).hexdigest(),
+            "keep": False, "profile_sha256": _profile_sha256(prof["name"]),
             "sources": [], "values": [], "missing": [], "dropped": {}, "model": "off"}
     model = args.model or CFG.model()
     carried = _load_task(old or target).get("rejected", []) if target else []  # --replaces keeps marked values out
@@ -439,8 +444,7 @@ def cmd_wrong(args, out=print):
                        "add --plan or --row, as the command beside each value on the review page does")
     v = vals[0]
     target, old = _replace_target(p, prof["name"])  # refuses a superseded task, as fields --replaces does
-    with open(fx.profile_path(prof["name"]), "rb") as f:
-        want_prof = hashlib.sha256(f.read()).hexdigest()
+    want_prof = _profile_sha256(prof["name"])
     if t.get("profile_sha256") and t["profile_sha256"] != want_prof:
         raise DocError(f"profile {prof['name']} changed since {name} was made: run fields --replaces on the whole "
                        "task instead")
