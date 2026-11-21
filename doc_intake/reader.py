@@ -141,14 +141,29 @@ def maxrss_mb(maxrss):
     return round(maxrss / (1 << 20 if sys.platform == "darwin" else 1 << 10), 1)
 
 
+# Bounded reads that ran without the memory cap since the last reset_uncapped(): scan reports the count once a run.
+_UNCAPPED = [0]
+
+
+def reset_uncapped():
+    _UNCAPPED[0] = 0
+
+
+def uncapped_reads():
+    """How many bounded reads ran without the memory cap (the OS refused it) since reset_uncapped()."""
+    return _UNCAPPED[0]
+
+
 def run_bounded(fn, *args, mem_mb=None, timeout=None):
     """Run fn(*args) in a forked child limited to mem_mb of address space (RLIMIT_AS, inherited by everything it
     starts) and timeout seconds, in its own process group so a timeout kills its tools too. Where the OS refuses
     RLIMIT_AS (macOS), the child runs without that one cap and keeps the rest (cap_address_space).
 
-    Returns (value, info): info is {"ok", "reason", "peak_rss_mb", "seconds"}; value is None unless ok. reason is
-    "too large" (MemoryError, or killed by a signal), "timeout", or the exception's type name: never text from
-    the file. peak_rss_mb is the child's and its tools' peak resident memory (wait4), in MB on every platform."""
+    Returns (value, info): info is {"ok", "reason", "peak_rss_mb", "seconds", "capped"}; value is None unless ok.
+    reason is "too large" (MemoryError, or killed by a signal), "timeout", or the exception's type name: never text
+    from the file. peak_rss_mb is the child's and its tools' peak resident memory (wait4), in MB on every platform.
+    capped is True when the memory cap applied, False when the OS refused it (the read ran uncapped; counted for
+    uncapped_reads), None when the child died before saying."""
     mem = (mem_mb or child_mem_mb()) << 20
     timeout = timeout or child_timeout()
     rfd, wfd = os.pipe()
@@ -161,7 +176,7 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         try:
             os.close(rfd)
             os.setsid()
-            cap_address_space(mem)
+            os.write(wfd, b"1" if cap_address_space(mem) else b"0")  # first byte: did the cap apply
             try:
                 payload = ("ok", fn(*args))
             except MemoryError:
@@ -196,8 +211,12 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         except (ProcessLookupError, PermissionError):
             pass
         _, status, ru = os.wait4(pid, 0)
+    data = b"".join(chunks)
+    capped = {b"1": True, b"0": False}.get(data[:1])
+    if capped is False:
+        _UNCAPPED[0] += 1
     info = {"ok": False, "reason": None, "peak_rss_mb": maxrss_mb(ru.ru_maxrss),
-            "seconds": round(time.monotonic() - t0, 1)}
+            "seconds": round(time.monotonic() - t0, 1), "capped": capped}
     if timed_out:
         info["reason"] = "timeout"
         return None, info
@@ -205,7 +224,7 @@ def run_bounded(fn, *args, mem_mb=None, timeout=None):
         info["reason"] = "too large"  # SIGKILL from the OOM killer, or a crash past the limit
         return None, info
     try:
-        kind, value = pickle.loads(b"".join(chunks))
+        kind, value = pickle.loads(data[1:])
     except Exception:  # noqa: BLE001 - the child died before writing
         info["reason"] = "too large" if os.WEXITSTATUS(status) == 3 else "failed"
         return None, info

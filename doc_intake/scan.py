@@ -151,6 +151,7 @@ def cmd_scan(args, out=print, route_opts=None):
         out(f"inbox is empty: {rel(inbox())}/")
         return 0
     prof = _profiler(args)
+    reader.reset_uncapped()
     known, near = fingerprints.records_index(out, retry_skipped=getattr(args, "retry_skipped", False), profile=prof)
     titles = load_titles()
     title_fn = _model_titles(args, out) if getattr(args, "llm_names", False) else None
@@ -182,6 +183,10 @@ def cmd_scan(args, out=print, route_opts=None):
     if unread:
         out(f"\n{unread} {'file' if unread == 1 else 'files'} not fully read (too large, timeout or OCR failure): "
             "UNSCREENED, not checked for sensitive data. Look at them yourself before filing.")
+    uncapped = reader.uncapped_reads()
+    if uncapped:
+        out(f"\n{uncapped} {'file' if uncapped == 1 else 'files'} read without a memory cap (this platform refuses "
+            "it); the timeout and pixel caps still applied.")
     dups = sum(r["status"] == "duplicate" for r in rows)
     if dups:
         out(f"\n{dups} exact {'copy' if dups == 1 else 'copies'} of a file already in {CFG.records_name} or earlier "

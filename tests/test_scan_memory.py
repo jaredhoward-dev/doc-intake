@@ -79,6 +79,43 @@ def test_run_bounded_reads_without_the_cap_where_refused(monkeypatch):
     assert value is None and info["reason"] == "timeout"
 
 
+@pytest.mark.parametrize("applies", [True, False])
+def test_run_bounded_says_whether_the_cap_applied(monkeypatch, applies):
+    monkeypatch.setattr(reader, "cap_address_space", lambda nbytes: applies)
+    reader.reset_uncapped()
+    value, info = reader.run_bounded(lambda: 1, mem_mb=256, timeout=30)
+    assert value == 1 and info["capped"] is applies
+    _, info = reader.run_bounded(time.sleep, 30, mem_mb=256, timeout=1)  # known even when the read times out
+    assert info["reason"] == "timeout" and info["capped"] is applies
+    assert reader.uncapped_reads() == (0 if applies else 2)
+
+
+def test_run_bounded_refused_cap_is_reported(monkeypatch):
+    refuse_rlimit_as(monkeypatch)
+    _, info = reader.run_bounded(lambda: 1, mem_mb=256, timeout=30)
+    assert info["capped"] is False
+
+
+UNCAPPED_LINE = "read without a memory cap (this platform refuses it); the timeout and pixel caps still applied."
+
+
+@pytest.mark.parametrize("applies", [True, False])
+def test_scan_says_once_when_reads_ran_uncapped(rec, monkeypatch, capsys, applies):
+    monkeypatch.setattr(reader, "cap_address_space", lambda nbytes: applies)
+    put(rec, "Archive/notes.txt", TEXT + " " + SENTINEL)
+    put(rec, "inbox/new notes.txt", TEXT + " other " + SENTINEL)
+    put(rec, "inbox/more notes.txt", TEXT + " more")
+    assert host.main(["scan", "--profile-mem"]) == 0
+    cap = capsys.readouterr()
+    reads = [x for x in cap.err.splitlines() if x.startswith("mem: ") and "notes.txt" in x]
+    assert len(reads) == 3 and all(f"mem_cap={'yes' if applies else 'no'}" in x for x in reads)
+    if applies:
+        assert UNCAPPED_LINE not in cap.out
+    else:
+        assert cap.out.count(UNCAPPED_LINE) == 1 and f"\n3 files {UNCAPPED_LINE}" in cap.out
+    assert "zebrafinch" not in cap.out + cap.err.replace("notes.txt", "")
+
+
 @pytest.mark.parametrize("platform, maxrss", [("darwin", 300 << 20), ("linux", 300 << 10)])
 def test_maxrss_is_converted_per_platform(monkeypatch, platform, maxrss):
     monkeypatch.setattr(sys, "platform", platform)
