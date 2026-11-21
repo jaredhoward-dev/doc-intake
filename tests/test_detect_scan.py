@@ -287,21 +287,41 @@ def test_ssn_glued_to_a_card_is_hidden(text, want_red, want_counts):
     assert detect.counts(detect.find_spans(text)) == want_counts  # one find_spans pass counts it the same
 
 
+GLUED_CARDS = ["4111-1111-1111-1111", "5555-5555-5555-4444", "4012-8888-8888-1881", "3782-822463-10005"]
+
+
+@pytest.mark.parametrize("card", GLUED_CARDS)
+@pytest.mark.parametrize("parts", [("078", "05", "1120"), ("123", "45", "6789"), ("578", "92", "3024")])
+@pytest.mark.parametrize("before", [False, True])
+def test_ssn_glued_to_a_card_pins_the_tag(card, parts, before):
+    ssn = _ssn_like(*parts)
+    text = "Ref " + (ssn + "-" + card if before else card + "-" + ssn) + " end"
+    # the third SSN before 5555-5555-5555-4444: its 3024 with 5555 5555 5555 passes Luhn by chance and overlaps the card, so
+    # the run is ambiguous and the tag is bare; every other case shows the card's own last four
+    tag = "[CARD]" if (parts[0], card, before) == ("578", GLUED_CARDS[1], True) else f"[CARD-last4:{card[-4:]}]"
+    want = "Ref " + ("[SSN]-" + tag if before else tag + "-[SSN]") + " end"
+    red, c = detect.redact(text)
+    assert red == want and c == {"card": 1, "ssn": 1}, red
+
+
 def test_ssn_glued_to_a_card_never_leaves_a_digit():
     rng = random.Random(780511)
     for _ in range(400):
         ssn = _ssn_like(f"{rng.randint(1, 665):03d}", f"{rng.randint(1, 99):02d}", f"{rng.randint(1, 9999):04d}")
         if detect.ssn_kind(*ssn.split("-")) is None:
             continue
-        card = rng.choice(["4111-1111-1111-1111", "5555-5555-5555-4444", "4012-8888-8888-1881", "3782-822463-10005"])
+        card = rng.choice(GLUED_CARDS)
         text = "Ref " + (card + "-" + ssn if rng.random() < 0.5 else ssn + "-" + card) + " end"
         red, c = detect.redact(text)
         assert c == {"card": 1, "ssn": 1}, text
         assert not re.search(r"\d", re.sub(r"\[CARD-last4:\d{4}\]", "", red)), text
-        tag = re.search(r"\[CARD-last4:(\d{4})\]", red)
-        # the card's own last four, or none when the run was ambiguous (a stretch passing Luhn by chance overlapped
-        # it); never the SSN's digits
-        assert "[CARD]" in red if tag is None else tag.group(1) == card[-4:], text
+        # exactly: a bare tag when an ambiguous (quiet) span covers the card, the card's own last four otherwise (an
+        # overlong stretch from the card runs into the SSN, which clips it back to the card)
+        quiet = set()
+        detect.raw_spans(text, quiet)
+        at = text.index(card)
+        bare = any(s <= at < e for s, e in quiet)
+        assert ("[CARD]" in red) if bare else (f"[CARD-last4:{card[-4:]}]" in red), text
 
 
 # SSN-shaped groups that ssn_kind rejects (area 000 or 666, a 9xx area outside the ITIN groups, group 00, serial
@@ -389,12 +409,83 @@ def test_ssn_shaped_group_beside_a_number_without_a_card(text, want_red, want_co
     assert red == want_red.format(ssn=SSN) and c == want_counts, red
 
 
-def test_glued_ssn_inside_another_span_is_left_to_it():
-    # the digits run into an e-mail's local part, so the e-mail covers the SSN, the number and the rest; a glued SSN
-    # taken first would drop the e-mail and leave its other digits showing
+def test_glued_ssn_inside_an_email_span():
+    # the digits run into an e-mail's local part: the SSN is hidden as an SSN and the rest of the e-mail as [EMAIL]
     text = SSN + "-12345678901-4000someone@example.com end"
     red, c = detect.redact(text)
-    assert red == "[EMAIL] end" and c == {"email": 1}, red
+    assert red == "[SSN]-[EMAIL] end" and c == {"ssn": 1, "email": 1}, red
+
+
+@pytest.mark.parametrize("text,want_red,want_counts", [
+    # the account value runs into the SSN: the account keeps its part outside it, tagged without digits (it showed
+    # the SSN's 2345 in its tag, and -6789 in the text)
+    ("Account: 12345678901-{ssn} 4111111111111111", "Account: [ACCOUNT]-[SSN] [CARD-last4:1111]",
+     {"account": 1, "ssn": 1, "card": 1}),
+    # the account value covers the SSN whole: its tag showed the SSN's serial
+    ("Acct # 12345-{ssn} 4111111111111111", "Acct # [ACCOUNT]-[SSN] [CARD-last4:1111]",
+     {"account": 1, "ssn": 1, "card": 1}),
+    ("Account: 12345678901-{ssn}", "Account: [ACCOUNT]-[SSN]", {"account": 1, "ssn": 1}),
+])
+def test_glued_ssn_partly_inside_account_span(text, want_red, want_counts):
+    ssn = _ssn_like("123", "45", "6789")
+    text = text.format(ssn=ssn)
+    red, c = detect.redact(text)
+    assert red == want_red and c == want_counts, red
+    assert not any(d in red for d in ("2345", "6789"))
+
+
+@pytest.mark.parametrize("text,want_red,want_counts", [
+    # the SSN label finds the same group: one SSN, not two
+    ("SSN: 12345678901-{ssn}", "SSN: [NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),
+    ("SSN {ssn} 4111-1111-1111-1111-{ssn}", "SSN [SSN] [CARD-last4:1111]-[SSN]", {"ssn": 2, "card": 1}),
+    # an EIN or phone glued by a dash isn't found (their own edges refuse a dash), as before; the SSN and number are
+    ("EIN 12-3456789-{ssn}-12345678901", "EIN 12-3456789-[SSN]-[NUMBER]", {"ssn": 1, "long-number": 1}),
+    ("Phone 212-555-0142-{ssn}-12345678901", "Phone 212-555-0142-[SSN]-[NUMBER]", {"ssn": 1, "long-number": 1}),
+    ("https://example.com/12345678901-{ssn}", "https://example.com/[NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),
+])
+def test_glued_ssn_beside_other_spans(text, want_red, want_counts):
+    red, c = detect.redact(text.format(ssn=SSN))
+    assert red == want_red and c == want_counts, red
+
+
+@pytest.mark.parametrize("text,want_red,want_counts", [
+    ("1234567890-{ssn}", "[NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),  # ten digits: a long number
+    # nine digits is no long number, so the run gives up nothing: a known gap, with the owner's pending decision
+    ("123456789-{ssn}", "123456789-{ssn}", {}),
+    ("12345678901-{bad}", "[NUMBER]-{bad}", {"long-number": 1}),  # area 666 is no SSN: one long number only
+    ("12345678901-{itin}", "[NUMBER]-[ITIN]", {"long-number": 1, "itin": 1}),
+])
+def test_glued_ssn_long_number_boundary(text, want_red, want_counts):
+    vals = {"ssn": SSN, "bad": _ssn_like("666", "45", "6789"), "itin": _ssn_like("912", "70", "1234")}
+    red, c = detect.redact(text.format(**vals))
+    assert red == want_red.format(**vals) and c == want_counts, red
+
+
+@pytest.mark.parametrize("text,want", [
+    ("1 4111 1111 1111 1111 912", "1 [CARD]"),  # a list number: the whole run fails, so the stretch search runs
+    ("12/29 4111 1111 1111 1111 912", "12/29 [CARD]"),
+    ("Exp 1229 4111 1111 1111 1111 912", "Exp 1229 [CARD]"),
+])
+def test_overlong_card_found_inside_a_run_shows_no_digits(text, want):
+    quiet, overlong = set(), set()
+    detect.raw_spans(text, quiet, overlong)
+    assert overlong and not quiet
+    red, c = detect.redact(text)
+    assert red == want and c == {"card": 1}, red
+
+
+def test_quiet_and_overlong_card_shows_no_digits():
+    text = "4960 4815 9100 5477 1347 724"  # random groups: stretches that merge, and a 19-digit pass with a 16 inside
+    quiet, overlong = set(), set()
+    detect.raw_spans(text, quiet, overlong)
+    assert quiet & overlong
+    red, c = detect.redact(text)
+    assert red == "[CARD]" and c == {"card": 1}, red
+
+
+@pytest.mark.parametrize("text", ["Total $1,234.56", "Invoice INV-2030-0042", "Qty 3 @ 4.99", "2030-01-05"])
+def test_ordinary_text_stays_clean_after_glued_ssn_changes(text):
+    assert detect.find_spans(text) == []
 
 
 def test_card_with_a_shorter_card_inside_shows_no_digits():
