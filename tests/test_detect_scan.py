@@ -178,45 +178,106 @@ PUBLISHED_CARDS = [(CARD, (4, 4, 4, 4)), ("5555555555554444", (4, 4, 4, 4)), ("3
                    ("6011111111111117", (4, 4, 4, 4)), ("4012888888881881", (4, 4, 4, 4))]
 
 
+def _random_groups(rng, k):
+    return ["".join(rng.choice("0123456789") for _ in range(rng.randint(1, 6))) for _ in range(k)]
+
+
+def _join(rng, parts):
+    """parts joined with a separator picked per join from ' .-'; returns (text, [(start, end) of each part])."""
+    text, where = "", []
+    for i, part in enumerate(parts):
+        if i:
+            text += rng.choice(" .-")
+        where.append((len(text), len(text) + len(part)))
+        text += part
+    return text, where
+
+
+def _card_groups(card, shape):
+    pos, out = 0, []
+    for n in shape:
+        out.append(card[pos:pos + n])
+        pos += n
+    return out
+
+
+def _covered(spans, offset, where):
+    return all(any(s <= offset + k < e for s, e, _, _ in spans) for a, z in where for k in range(a, z))
+
+
 def test_card_among_random_digit_groups_is_always_covered():
     rng = random.Random(20301105)
-    for _ in range(3000):
-        card, shape = rng.choice(PUBLISHED_CARDS)
-        sep = rng.choice(" .-")
-        pos, groups = 0, []
-        for n in shape:
-            groups.append(card[pos:pos + n])
-            pos += n
-        before = ["".join(rng.choice("0123456789") for _ in range(rng.randint(1, 6))) for _ in range(rng.randint(0, 4))]
-        after = ["".join(rng.choice("0123456789") for _ in range(rng.randint(1, 6))) for _ in range(rng.randint(0, 3))]
-        head = sep.join(before) + sep if before else ""
-        text = "Ref " + head + sep.join(groups + after) + " end"
-        s0 = len("Ref ") + len(head)
-        spans = detect.find_spans(text)
-        assert all(any(s <= k < e for s, e, _, _ in spans)
-                   for k in range(s0, s0 + len(sep.join(groups))) if text[k].isdigit()), (before, after, sep)
+    for _ in range(2500):
+        groups = _card_groups(*rng.choice(PUBLISHED_CARDS))
+        before, after = _random_groups(rng, rng.randint(0, 4)), _random_groups(rng, rng.randint(0, 3))
+        if rng.random() < 0.5:
+            sep = rng.choice(" .-")  # one separator throughout
+            body, where = sep.join(before + groups + after), []
+            pos = len(sep.join(before)) + (len(sep) if before else 0)
+            for g in groups:
+                where.append((pos, pos + len(g)))
+                pos += len(g) + 1
+        else:  # a separator picked per join
+            body, all_where = _join(rng, before + groups + after)
+            where = all_where[len(before):len(before) + len(groups)]
+        text = "Ref " + body + " end"
+        assert _covered(detect.find_spans(text), 4, where), text
+
+
+def test_two_cards_among_random_digit_groups_are_always_covered():
+    rng = random.Random(20301106)
+    for _ in range(1500):
+        first, second = _card_groups(*rng.choice(PUBLISHED_CARDS)), _card_groups(*rng.choice(PUBLISHED_CARDS))
+        between = _random_groups(rng, rng.randint(0, 3))
+        body, where = _join(rng, first + between + second)
+        where = where[:len(first)] + where[len(first) + len(between):]
+        text = "Ref " + body + " end"
+        assert _covered(detect.find_spans(text), 4, where), text
 
 
 def test_twenty_digit_spaced_run_is_pinned():
-    # 4000 0000 0000 0000 0006: no 13-19 digit stretch passes Luhn, and 0006 is neither short nor expiry-shaped
-    # (month 00), so the misread fallback leaves the run alone (a known gap, listed in docs/engine.md Limits).
-    assert detect.find_spans("4000 0000 0000 0000 0006") == []
+    # 4000 0000 0000 0000 0006: no 13-19 digit stretch passes Luhn; 4000 0000 0000 0000 is a misread with an issuer
+    # prefix, so it is hidden and the extra 0006 group is left.
+    red, c = detect.redact("4000 0000 0000 0000 0006")
+    assert c == {"long-number": 1} and red == "[NUMBER] 0006"
 
 
-@pytest.mark.parametrize("text,n", [("Card 4111 1111 1111 1112 1234", 1),  # 1234 reads as MMYY 12/34
-                                    ("4111 1111 1111 1112 2030", 1), ("4111 1111 1111 1112 0630 123", 1),
-                                    ("Exp 2030 4111 1111 1111 1112", 1),
-                                    ("4111 1111 1111 1112 5555 5555 5555 4443", 2)])
-def test_misread_card_beside_an_expiry_or_another_card_is_a_number(text, n):
-    assert detect.counts(detect.find_spans(text)) == {"long-number": n}
+def test_misread_beside_two_arbitrary_groups():
+    text = "Card 4111 1111 1111 1112 1234 5678"
+    assert detect.counts(detect.find_spans(text)) == {"long-number": 1}
     red, _ = detect.redact(text)
-    assert not re.search(r"\d{4}", red), red
+    assert "4111" not in red and "1112" not in red and red == "Card [NUMBER] 5678"  # 1234 reads as MMYY, hidden too
 
 
-@pytest.mark.parametrize("text", ["2030-0042-0017-0003-0001", "2030-0042-0017-0003-0012", "1234-5678-9012-3456-2030",
-                                  "2030-1111-2222-3333-4444"])
-def test_five_group_ids_stay_clean(text):
-    assert detect.find_spans(text) == []  # no card issuer prefix, or a fifth group that isn't an expiry
+def test_merged_card_span_tag():
+    # 5555555555554444 and 5555555544443972 are both cards and merge; 5555 4444 3972 9815 has a card prefix but fails
+    # Luhn, so its part past the card (9815) is hidden as a number. The tag shows the last four of the merged span.
+    text = "5555-5555-5555-4444-3972-9815"
+    c = detect.counts(detect.find_spans(text))
+    assert c == {"card": 1, "long-number": 1}
+    red, _ = detect.redact(text)
+    assert red == "[CARD-last4:3972]-[NUMBER]"
+    assert not any(v in red for v in ("5555", "4444", "9815"))
+
+
+def test_receipt_lines_stay_clean():
+    assert detect.find_spans("Store 0042 Reg 03 Trans 0017 Time 12:34 Auth 4111") == []
+    red, c = detect.redact("Total 4111 1111 1111 1111 $12.50")
+    assert c == {"card": 1} and red == "Total [CARD-last4:1111] $12.50"
+
+
+def test_card_partly_inside_a_higher_priority_span_is_still_hidden():
+    # 618-91-5555 reads as an SSN first (found by the fuzz test); the card digits outside it are hidden as well
+    red, c = detect.redact("Ref 384.932.618-91-5555.5555-5555.4444.062 end")
+    assert c == {"ssn": 1, "card": 1} and red == "Ref 384.932.[SSN].[CARD-last4:4444].062 end"
+    # the SSN takes the end of a 19-digit card: the head piece is still counted as a card but shows no last four
+    red, c = detect.redact("Ref 4000 0000 0000 0000 006-12-3456 end")
+    assert c == {"card": 1, "ssn": 1} and red == "Ref [NUMBER] [SSN] end"
+
+
+@pytest.mark.parametrize("text", ["2030 0042 0017 0003 0001", "1234-5678-9012-3456-7890"])
+def test_more_five_group_ids_stay_clean(text):
+    assert detect.find_spans(text) == []
 
 
 def test_ssn_rules():

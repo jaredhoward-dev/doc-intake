@@ -99,11 +99,26 @@ def _card_spans(text):
                 cards[-1] = (cards[-1][0], max(cards[-1][1], b[1]), 0)
             else:
                 cards.append(b)
+        def misread_piece(a, z):  # a Luhn-failing card-grouped stretch with an issuer prefix
+            piece = raw[groups[a][0]:groups[z][1]]
+            n = len(re.sub(r"\D", "", piece))
+            return (13 <= n <= 19 and bool(_CARD_GROUPED.match(piece)) and ("." not in piece or n >= 15)
+                    and card_prefix_ok(re.sub(r"\D", "", piece)))
+
         gaps, prev = [], 0
         for ci, cj, _ in cards:
             out.append((base + groups[ci][0], base + groups[cj][1], "card"))
-            gaps.append((prev, ci))
-            prev = cj + 1
+            # A misread stretch overlapping the card's start or end: hide the part outside the card as well.
+            head = min((a for a in range(max(prev, ci - 6), ci) for z in range(ci, min(cj, a + 6))
+                        if misread_piece(a, z)), default=ci)
+            tail = max((z for a in range(ci + 1, cj + 1) for z in range(cj + 1, min(len(groups), a + 6))
+                        if misread_piece(a, z)), default=cj)
+            if head < ci:
+                out.append((base + groups[head][0], base + groups[ci - 1][1], "long-number"))
+            if tail > cj:
+                out.append((base + groups[cj + 1][0], base + groups[tail][1], "long-number"))
+            gaps.append((prev, head))
+            prev = tail + 1
         gaps.append((prev, len(groups)))
         for lo, hi in gaps:
             def misread_ok(piece, a, z, lo=lo, hi=hi):
@@ -126,9 +141,9 @@ _EXPIRY_GROUP = re.compile(r"^(?:(?:0[1-9]|1[0-2])\d\d|20\d\d)$")  # MMYY, or a 
 
 def _misread_tiling(raw, groups, lo, hi):
     """[(i, j)] group ranges to hide as long-number when Luhn-failing card-grouped stretches sit beside 4-digit
-    groups. The gap must split into such stretches (each with a card issuer prefix) and other groups that are
-    shorter than four digits or expiry-shaped (MMYY, 20xx); an expiry group is hidden with the stretch before it
-    (or after it, at the start). Anything else beside them (2030-0042-0017-0003-0001) leaves the gap alone."""
+    groups. The gap must split into such stretches (each with a card issuer prefix, which keeps IDs like
+    2030-0042-0017-0003-0001 clean) and other groups of at most four digits; an expiry-shaped one (MMYY, 20xx) is
+    hidden with the stretch before it (or after it, at the start), any other is left in the text."""
     best = {lo: (0, None)}  # k -> (digits in stretches, (previous k, tile))
     for k in range(lo, hi):
         if k not in best:
@@ -139,8 +154,8 @@ def _misread_tiling(raw, groups, lo, hi):
         moves = []
         if glen < 4:
             moves.append((k + 1, score, ("free", k, k)))
-        elif glen == 4 and _EXPIRY_GROUP.match(text_k):
-            moves.append((k + 1, score, ("expiry", k, k)))
+        elif glen == 4:  # an expiry is hidden with its stretch; any other 4-digit group is left as it is
+            moves.append((k + 1, score, ("expiry" if _EXPIRY_GROUP.match(text_k) else "free", k, k)))
         n = 0
         for j in range(k, hi):
             n += groups[j][1] - groups[j][0]
@@ -408,9 +423,23 @@ def find_spans(text):
     cands = sorted(raw_spans(text), key=lambda s: (rank[s[2]], s[0], -(s[1] - s[0])))
     taken = []
     for s, e, k in cands:
-        if any(s < te and ts < e for ts, te, _, _ in taken):
+        hits = sorted((ts, te) for ts, te, _, _ in taken if s < te and ts < e)
+        if not hits:
+            taken.append((s, e, k, _tag(k, text[s:e])))
             continue
-        taken.append((s, e, k, _tag(k, text[s:e])))
+        if k not in ("card", "long-number"):
+            continue
+        # A card or number partly inside a higher-priority span (618-91-5555.5555-5555.4444 read as an SSN first):
+        # hide the digits left outside it too, or the rest of the card would stay in the text.
+        pos = s
+        for ts, te in hits + [(e, e)]:
+            piece = (max(pos, s), min(ts, e))
+            m = re.search(r"\d(?:.*\d)?", text[piece[0]:piece[1]]) if piece[0] < piece[1] else None
+            if m:  # only a piece that ends where the card ends may show the designed last four
+                tail = text[piece[0] + m.end():e].strip(" .-") == ""
+                taken.append((piece[0] + m.start(), piece[0] + m.end(), k,
+                              _tag(k, m.group(0)) if tail else TAGS["long-number"]))
+            pos = max(pos, te)
     return sorted(taken)
 
 

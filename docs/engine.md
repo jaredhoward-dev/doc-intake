@@ -143,8 +143,9 @@ Read these before trusting it:
   numbers are found as plain digits, grouped with spaces or dashes, or in dotted card groups (4-4-4-4, 4-6-5,
   4-6-4; narrow on purpose, so thousands, versions and IP addresses stay clean), all Luhn-checked. Grouped digits
   that fail Luhn are hidden as a number, so a dotted 4-4-4-4 order or build number is redacted too; beside other
-  4-digit groups they are hidden only when those look like an expiry (MMYY, 20xx) or another card, so a misread
-  card next to an arbitrary 4-digit group (`4000 0000 0000 0000 0006`) is not. Not found:
+  4-digit groups they are hidden when they start with a card issuer prefix (an expiry-shaped neighbour goes with
+  them), so IDs like `5100 0042 0017 0003 0001` or `4111-1111-1111-1112-0001` lose their first sixteen digits,
+  while `2030-0042-0017-0003-0001` stays clean. Not found:
   double-space gaps, groups wrapped across lines, `/` `,` `_` separators, spaced separators (`4111 - 1111`), and
   dotted Luhn-failing runs under 15 digits. Names
   are not detected at all. Other layouts, other countries' formats and numbers broken up by OCR errors slip
