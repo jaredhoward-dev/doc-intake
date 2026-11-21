@@ -39,6 +39,24 @@
    ]
   },
   {
+   "name": "Example Power & Light",
+   "domains": [
+    "example-power.test"
+   ],
+   "patterns": [
+    "\\bexample\\s+power\\s+(?:&|and)\\s+light\\b"
+   ]
+  },
+  {
+   "name": "Sample Water District",
+   "domains": [
+    "sample-water.test"
+   ],
+   "patterns": [
+    "\\bsample\\s+water\\s+district\\b"
+   ]
+  },
+  {
    "name": "Example Motor Credit",
    "kind": "lender",
    "domains": [

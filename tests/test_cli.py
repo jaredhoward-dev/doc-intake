@@ -332,7 +332,7 @@ def test_example_config_is_valid():
         data = tomllib.load(f)
     assert set(data) <= cli.KEYS and "root" in data
     rules = cli._rules(data["route"])
-    assert [r["category"] for r in rules] == ["invoice", "receipt"]
+    assert [r["category"] for r in rules] == ["utility", "invoice", "receipt"]
     if os.path.isfile(os.path.join(REPO, "profiles", "receipt.json")):
         assert cli.load_config(path)["profiles_dir"] == os.path.join(REPO, "profiles")
 

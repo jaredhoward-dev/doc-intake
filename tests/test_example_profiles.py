@@ -1,6 +1,6 @@
 """The example profiles under profiles/ (what a new host starts from): each loads and validates, the example
-known-senders map parses and its patterns compile, and a fake receipt and a fake invoice give their required fields
-with the engine pointed at profiles/. Every vendor, domain, number and amount here is made up."""
+known-senders map parses and its patterns compile, and a fake receipt, a fake invoice and two fake utility bills give
+their required fields with the engine pointed at profiles/. Every vendor, domain, number and amount here is made up."""
 import json
 import os
 import re
@@ -14,7 +14,7 @@ from helpers import ACCOUNT, CARD, FAKES
 
 PROFILES = os.path.join(os.path.dirname(host.HERE), "profiles")
 SENDERS = os.path.join(PROFILES, "senders.json")
-EXAMPLES = ("receipt", "invoice")
+EXAMPLES = ("receipt", "invoice", "utility_bill")
 
 
 @pytest.fixture
@@ -146,3 +146,90 @@ def test_example_profiles_drop_detector_values(examples):
     assert sum(dropped_inv.values()) == 1
     for value in list(got.values()) + list(got_inv.values()):
         assert not any(fake in value for fake in FAKES), value
+
+
+# Two fake utility bills from made-up providers on .test domains, in the two layouts bills come in: labels with their
+# values on the same line, and a row of labels with the values on the line below. Each carries an account number and
+# a service address the profile must never return.
+UTILITY_SAME_LINE = f"""EXAMPLE POWER & LIGHT
+billing@example-power.test
+
+Account Number:    {ACCOUNT}
+Service Address:   100 Sample Lane, Exampleton
+Statement Date:    11/05/2030
+Service Period:    10/03/2030 - 11/02/2030
+Due Date:          11/26/2030
+
+Previous Balance                 $84.20
+Payment Received - Thank You     $84.20
+Current Charges                  $91.37
+Total Amount Due                 $91.37
+"""
+
+UTILITY_BELOW = f"""Sample Water District
+customer care: sample-water.test
+
+Account Number          Bill Date          Due Date
+{ACCOUNT}             12/01/2030         12/22/2030
+
+Service Address
+200 Example Road, Sampleville
+
+Service From            Service To
+10/28/2030              11/27/2030
+
+Previous Balance        Payments           Amount Due
+$40.10                  $40.10             $38.65
+"""
+
+UTILITY_NEVER = (ACCOUNT, "Sample Lane", "Example Road", "100 ", "200 ")
+
+
+@pytest.mark.parametrize("text, want", [
+    (UTILITY_SAME_LINE, {"provider": "Example Power & Light", "statement_date": "2030-11-05",
+                         "period_start": "2030-10-03", "period_end": "2030-11-02", "due_date": "2030-11-26",
+                         "amount_due": "$91.37", "previous_balance": "$84.20", "payments_received": "$84.20"}),
+    (UTILITY_BELOW, {"provider": "Sample Water District", "statement_date": "2030-12-01",
+                     "period_start": "2030-10-28", "period_end": "2030-11-27", "due_date": "2030-12-22",
+                     "amount_due": "$38.65", "previous_balance": "$40.10", "payments_received": "$40.10"}),
+], ids=["same-line", "below"])
+def test_fake_utility_bills_give_their_fields(examples, text, want):
+    got, prof, dropped = _values("utility_bill", text)
+    required = {f["name"] for f in prof["fields"] if f.get("required")}
+    assert required <= set(got)
+    assert got == want  # every field, exactly, and nothing else
+    assert not dropped
+    for value in got.values():
+        assert not any(bit in value for bit in UTILITY_NEVER), value
+
+
+def test_utility_bill_never_takes_account_or_address(examples):
+    """No field can hold an account number, service address, customer name or meter number, and an account number
+    printed where a field's value goes is dropped and counted, never returned."""
+    prof = fx.load_profile("utility_bill")
+    names = {f["name"] for f in prof["fields"]}
+    for word in ("account", "address", "customer", "meter", "name"):
+        assert not any(word in n for n in names), word
+    assert all(f["type"] in ("date", "money", "org_name") for f in prof["fields"])
+    # an account number where the payments figure goes (a misread row): "money" can't hold it whole, and the
+    # detector drops any piece that overlaps it
+    text = UTILITY_SAME_LINE.replace("Payment Received - Thank You     $84.20",
+                                     f"Payment Received - Thank You     {ACCOUNT}.00")
+    got, _, dropped = _values("utility_bill", text)
+    assert "payments_received" not in got
+    assert sum(dropped.values()) == 1
+    for value in got.values():
+        assert not any(fake in value for fake in FAKES), value
+
+
+def test_example_routes_send_utility_bills_to_their_profile():
+    """examples/doc-intake.toml: both fake bills route to the utility_bill profile, and the fake invoice
+    still routes to its own (the fake receipt never says "receipt", so it matches no rule)."""
+    import tomllib
+    from doc_intake import cli
+    with open(os.path.join(os.path.dirname(PROFILES), "examples", "doc-intake.toml"), "rb") as f:
+        rules = cli._rules(tomllib.load(f)["route"])
+    for text, profile in ((UTILITY_SAME_LINE, "utility_bill"), (UTILITY_BELOW, "utility_bill"),
+                          (INVOICE, "invoice")):
+        assert cli.classify(rules, text)["profile"] == profile
+    assert cli.classify(rules, RECEIPT) is None

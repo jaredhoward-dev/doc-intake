@@ -25,6 +25,17 @@ model = ""
 # gets no profile and no destination. Patterns are regular expressions, matched case-insensitively; single quotes
 # keep backslashes literal.
 
+# Utility bills first: their patterns are specific (a meter, a unit of usage, a service address), while a bill that
+# also says "invoice" would otherwise go to the invoice rule below.
+[[route]]
+category = "utility"
+patterns = ['\bservice\s+address\b|\bmeter\s+(?:number|read(?:ing)?)\b|\bkwh\b|\btherms?\b|\bccf\b|\bgallons\b|\busage\b',
+            '\bamount\s+due\b|\bdue\s+date\b|\bprevious\s+balance\b']
+min_matches = 2
+profile = "utility_bill"
+dest = "Bills/Utilities/{year}"
+name = "Utility Bill"
+
 [[route]]
 category = "invoice"
 patterns = ['\binvoice\b', '\bamount\s+due\b|\bbill\s+to\b|\bdue\s+date\b']
