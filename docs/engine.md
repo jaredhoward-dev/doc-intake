@@ -142,7 +142,9 @@ Read these before trusting it:
 - **Detectors are pattern-based and US-centric.** SSNs, ABA routing numbers, US phone and address layouts. Card
   numbers are found as plain digits, grouped with spaces or dashes, or in dotted card groups (4-4-4-4, 4-6-5,
   4-6-4; narrow on purpose, so thousands, versions and IP addresses stay clean), all Luhn-checked. Grouped digits
-  that fail Luhn are hidden as a number, so a dotted 4-4-4-4 order or build number is redacted too. Names
+  that fail Luhn are hidden as a number, so a dotted 4-4-4-4 order or build number is redacted too. Not found:
+  double-space gaps, groups wrapped across lines, `/` `,` `_` separators, spaced separators (`4111 - 1111`), and
+  dotted Luhn-failing runs under 15 digits. Names
   are not detected at all. Other layouts, other countries' formats and numbers broken up by OCR errors slip
   through.
 - **The local-model pass is best-effort and nondeterministic.** It only adds flags or fills fields that are then
