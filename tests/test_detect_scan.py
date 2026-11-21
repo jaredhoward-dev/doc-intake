@@ -275,6 +275,8 @@ def _ssn_like(area, group, serial):
     ("Card 5555-5555-5555-4444-{ssn}-12", "Card [CARD-last4:4444]-[SSN]-12", {"card": 1, "ssn": 1}),
     ("Card 4111-1111-1111-1112-{ssn}", "Card [NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),  # a misread too
     ("Card 4111-1111-1111-1111-{itin}", "Card [CARD-last4:1111]-[ITIN]", {"card": 1, "itin": 1}),
+    ("{ssn}-5555 5555 5555 4444", "[SSN]-[CARD-last4:4444]", {"ssn": 1, "card": 1}),
+    ("{ssn}-4111-1111-1111-1112", "[SSN]-[NUMBER]", {"ssn": 1, "long-number": 1}),  # at the start of a misread
 ])
 def test_ssn_glued_to_a_card_is_hidden(text, want_red, want_counts):
     # 4111111111111111078 passes is_card by chance, so the card swallowed 078 and its tag showed 1078, while 05-1120
@@ -298,6 +300,87 @@ def test_ssn_glued_to_a_card_never_leaves_a_digit():
         assert not re.search(r"\d", re.sub(r"\[CARD-last4:\d{4}\]", "", red)), text
         tag = re.search(r"\[CARD-last4:(\d{4})\]", red)
         assert tag and tag.group(1) == card[-4:], text  # the card's own last four, never the SSN's digits
+
+
+# SSN-shaped groups that ssn_kind rejects (area 000 or 666, a 9xx area outside the ITIN groups, group 00, serial
+# 0000) are not SSNs, so nothing new is hidden: pinned as the code behaves today. Where the card plus the first
+# group happens to pass Luhn as a 19-digit card (4111...1111912, 4111...1111078), that card swallows the group and
+# its tag shows that group's digits; the rest of the group stays, as for any digits beside a card.
+@pytest.mark.parametrize("area,group,serial,before,want", [
+    ("000", "12", "3456", True, "{bad}-[CARD-last4:1111]"),
+    ("000", "12", "3456", False, "[CARD-last4:1111]-{bad}"),
+    ("666", "12", "3456", True, "{bad}-[CARD-last4:1111]"),
+    ("666", "12", "3456", False, "[CARD-last4:1111]-{bad}"),
+    ("912", "10", "1234", True, "{bad}-[CARD-last4:1111]"),
+    ("912", "10", "1234", False, "[CARD-last4:1912]-10-1234"),
+    ("078", "00", "1120", True, "{bad}-[CARD-last4:1111]"),
+    ("078", "05", "0000", False, "[CARD-last4:1078]-05-0000"),
+])
+def test_invalid_ssn_shapes_beside_a_card_are_pinned(area, group, serial, before, want):
+    bad = _ssn_like(area, group, serial)
+    assert detect.ssn_kind(area, group, serial) is None
+    card = "4111-1111-1111-1111"
+    red, c = detect.redact(bad + "-" + card if before else card + "-" + bad)
+    assert c == {"card": 1} and red == want.format(bad=bad), red
+
+
+def test_ambiguous_card_run_tag_shows_no_digits_even_beside_a_glued_ssn():
+    # Five groups g0..g4, then a dash and the SSN. g0..g3 and g1..g4 are both 16-digit Visa numbers (different
+    # starts, different ends), and g2 g3 g4 plus the SSN's 078-05 is a 17-digit UnionPay number, so the merged card
+    # span runs into the SSN. The SSN outranks it and clips it to g0..g4: 20 digits, not a card, and the span is
+    # ambiguous, so its tag shows no digits.
+    def complete(partial):
+        return next(partial + d for d in "0123456789" if detect.luhn_ok(partial + d))
+
+    def build(g2):
+        g0, g1 = "4000", "4111"
+        g3 = complete(g0 + g1 + g2 + "123")[-4:]
+        g4 = complete(g1 + g2 + g3 + "456")[-4:]
+        return [g0, g1, g2, g3, g4]
+
+    groups = next(g for g in (build(f"62{k:02d}") for k in range(100))
+                  if detect.is_card("".join(g[2:]) + SSN.replace("-", "")[:5]))
+    assert detect.is_card("".join(groups[:4])) and detect.is_card("".join(groups[1:]))
+    text = "-".join(groups) + "-" + SSN
+    quiet = set()
+    detect.raw_spans(text, quiet)
+    assert any(e > text.index(SSN) for _, e in quiet)  # the ambiguous merged span runs into the SSN
+    red, c = detect.redact(text)
+    assert red == "[CARD]-[SSN]" and c == {"card": 1, "ssn": 1}, red
+    assert "last4" not in red
+
+    # Pinned as the code behaves today (the show = is_card(digits) shortcut): when the SSN clips the ambiguous span
+    # down to a piece that is itself a whole card, that piece shows its own last four. Here g0..g3 is a Visa and g1 g2
+    # g3 plus 078-05 a 17-digit Diners number; once the SSN takes 078-05, g0..g3 is the only card left, and the four
+    # digits shown are its own, outside the SSN.
+    def build_diners(k):
+        g0, g1, g2 = "4000", f"38{k:02d}", "5678"
+        return [g0, g1, g2, complete(g0 + g1 + g2 + "123")[-4:]]
+
+    groups = next(g for g in (build_diners(k) for k in range(100))
+                  if detect.is_card("".join(g[1:]) + SSN.replace("-", "")[:5]))
+    text = "-".join(groups) + "-" + SSN
+    quiet = set()
+    detect.raw_spans(text, quiet)
+    assert any(e > text.index(SSN) for _, e in quiet)  # the ambiguous merged span runs into the SSN
+    red, c = detect.redact(text)
+    assert red == f"[CARD-last4:{groups[3]}]-[SSN]" and c == {"card": 1, "ssn": 1}, red
+
+
+@pytest.mark.parametrize("text,want_red,want_counts", [
+    # a misread (card prefix, fails Luhn) is a hidden number, so its run gives up the glued SSN
+    ("4111.1111.1111.1112-{ssn}", "[NUMBER]-[SSN]", {"long-number": 1, "ssn": 1}),
+    # a long-number found by the plain 10+ digit pattern is not a card run's hit, so the glued SSN stays: a known gap,
+    # queued for the owner with the other glued shapes (after an expiry, a double dash, bare digit groups)
+    ("12345678901-{ssn}", "[NUMBER]-{ssn}", {"long-number": 1}),
+    ("{ssn}-12345678901", "{ssn}-[NUMBER]", {"long-number": 1}),
+    # card-grouped digits without an issuer prefix: nothing hidden, so the run gives up nothing (as before)
+    ("Order 2030.1111.2222.3333-{ssn}", "Order 2030.1111.2222.3333-{ssn}", {}),
+])
+def test_ssn_shaped_group_beside_a_number_without_a_card(text, want_red, want_counts):
+    text = text.format(ssn=SSN)
+    red, c = detect.redact(text)
+    assert red == want_red.format(ssn=SSN) and c == want_counts, red
 
 
 @pytest.mark.parametrize("text", ["Ref 2030-{ssn}-0001", "Part 12-{ssn}", "{ssn}-2030"])
