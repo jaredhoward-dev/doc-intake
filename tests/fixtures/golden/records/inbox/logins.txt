@@ -1,0 +1,3 @@
+Example site login
+Username: someone@example.com
+Password: hunter22

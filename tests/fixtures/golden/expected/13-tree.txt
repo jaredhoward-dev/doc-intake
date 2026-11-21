@@ -1,0 +1,26 @@
+.doc-intake/access.log  0o600
+.doc-intake/extracts/9d269a76 - paystub p1.txt  0o600
+.doc-intake/index.json  0o600
+.doc-intake/previews/invoice-<TODAY>.html  0o600
+.doc-intake/previews/paystub-<TODAY>.html  0o600
+.doc-intake/previews/receipt-<TODAY>.html  0o600
+.doc-intake/previews/tax_w2-<TODAY>.html  0o600
+.doc-intake/records-hashes.json  0o600
+.doc-intake/tasks/invoice-<TODAY>.json  0o600
+.doc-intake/tasks/paystub-<TODAY>.json  0o600
+.doc-intake/tasks/receipt-<TODAY>.json  0o600
+.doc-intake/tasks/tax_w2-<TODAY>.json  0o600
+Archive/2030/2030-01-09 - Software receipt (old copy).txt  0o600
+Archive/2030/2030-01-20 - Water bill.txt  0o600
+Taxes/2029/notes.txt  0o600
+inbox/.held/logins.txt  0o600
+inbox/garden-order.eml  0o600
+inbox/invoice-print.txt  0o600
+inbox/invoice-software.txt  0o600
+inbox/list.txt  0o600
+inbox/paystub.txt  0o600
+inbox/receipt-print.txt  0o600
+inbox/receipt-software.txt  0o600
+inbox/w2-2030.txt  0o600
+inbox/water-copy.txt  0o600
+inbox/water-rescan.txt  0o600

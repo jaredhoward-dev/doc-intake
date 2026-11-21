@@ -13,7 +13,7 @@ working on this repo and to using it.
   `tests/test_generic.py` enforces it.
 - **No host specifics in the engine**: no folder layout, vendor list, bookkeeping or locale rules.
   A host passes those in through `configure()`.
-- Tests: `python3 -I -m unittest discover -s tests -t . -v`. Prefer targeted tests locally; CI runs
+- Tests: `python3 -I -m pytest -q tests`. Prefer targeted tests locally; CI runs
   the suite.
 - Work on a branch in a worktree beside the main checkout, and open a pull request; `main` changes
   only by merge.

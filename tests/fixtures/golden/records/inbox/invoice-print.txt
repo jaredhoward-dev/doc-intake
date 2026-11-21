@@ -1,0 +1,6 @@
+EXAMPLE PRINT SHOP
+Invoice
+Invoice number PS-2002
+Invoice date 02/02/2030
+Flyers           20.00
+Amount due       $20.00

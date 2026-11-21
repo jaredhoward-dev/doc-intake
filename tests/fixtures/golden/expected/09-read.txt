@@ -1,0 +1,81 @@
+$ host.py read tax_w2-<TODAY>.json --reason golden test
+rc=0
+--- stdout
+{
+ "task": "tax_w2",
+ "sources": [
+  "inbox/w2-2030.txt"
+ ],
+ "values": [
+  {
+   "group": "w2",
+   "plan": null,
+   "row": null,
+   "field": "box1_wages",
+   "value": "52,000.00",
+   "file": "inbox/w2-2030.txt",
+   "page": 1,
+   "label": "1 wages, tips, other compensation"
+  },
+  {
+   "group": "w2",
+   "plan": null,
+   "row": null,
+   "field": "box2_federal_income_tax_withheld",
+   "value": "6,100.00",
+   "file": "inbox/w2-2030.txt",
+   "page": 1,
+   "label": "2 federal income tax withheld"
+  },
+  {
+   "group": "w2",
+   "plan": null,
+   "row": null,
+   "field": "box3_social_security_wages",
+   "value": "52,000.00",
+   "file": "inbox/w2-2030.txt",
+   "page": 1,
+   "label": "3 social security wages"
+  },
+  {
+   "group": "w2",
+   "plan": null,
+   "row": null,
+   "field": "box4_social_security_tax_withheld",
+   "value": "3,224.00",
+   "file": "inbox/w2-2030.txt",
+   "page": 1,
+   "label": "4 social security tax withheld"
+  },
+  {
+   "group": "w2",
+   "plan": null,
+   "row": null,
+   "field": "box5_medicare_wages",
+   "value": "52,000.00",
+   "file": "inbox/w2-2030.txt",
+   "page": 1,
+   "label": "5 medicare wages and tips"
+  },
+  {
+   "group": "w2",
+   "plan": null,
+   "row": null,
+   "field": "box6_medicare_tax_withheld",
+   "value": "754.00",
+   "file": "inbox/w2-2030.txt",
+   "page": 1,
+   "label": "6 medicare tax withheld"
+  }
+ ],
+ "missing": [
+  "w2.box12a",
+  "w2.box12b",
+  "w2.box12c",
+  "w2.box12d",
+  "w2.box16_state_wages",
+  "w2.box17_state_income_tax"
+ ],
+ "dropped": {}
+}
+--- stderr

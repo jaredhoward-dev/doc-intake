@@ -1,0 +1,62 @@
+{
+ "approved": false,
+ "dropped": {},
+ "fields": {
+  "inbox/paystub.txt": [
+   "pay.federal_income_tax_current",
+   "pay.federal_income_tax_ytd",
+   "pay.gross_pay_current",
+   "pay.gross_pay_ytd",
+   "pay.medicare_current",
+   "pay.medicare_ytd",
+   "pay.net_pay_current",
+   "pay.net_pay_ytd",
+   "pay.pay_date",
+   "pay.period_end",
+   "pay.period_start",
+   "pay.pretax_401k_403b_current",
+   "pay.pretax_401k_403b_ytd",
+   "pay.social_security_current",
+   "pay.social_security_ytd",
+   "pay.state_income_tax_current",
+   "pay.state_income_tax_ytd"
+  ]
+ },
+ "keep": true,
+ "keys": [
+  "approved",
+  "created",
+  "dropped",
+  "keep",
+  "missing",
+  "model",
+  "profile_sha256",
+  "sources",
+  "task",
+  "values"
+ ],
+ "missing": [
+  "pay.pretax_hsa_current",
+  "pay.pretax_hsa_ytd",
+  "pay.pretax_medical_current",
+  "pay.pretax_medical_ytd",
+  "pay.pretax_dental_current",
+  "pay.pretax_dental_ytd",
+  "pay.pretax_vision_current",
+  "pay.pretax_vision_ytd",
+  "pay.pretax_fsa_current",
+  "pay.pretax_fsa_ytd",
+  "pay.posttax_roth_401k_current",
+  "pay.posttax_roth_401k_ytd",
+  "pay.posttax_after_tax_401k_current",
+  "pay.posttax_after_tax_401k_ytd",
+  "pay.posttax_supplemental_life_current",
+  "pay.posttax_supplemental_life_ytd",
+  "pay.posttax_disability_current",
+  "pay.posttax_disability_ytd"
+ ],
+ "sources": [
+  "inbox/paystub.txt"
+ ],
+ "task": "paystub"
+}

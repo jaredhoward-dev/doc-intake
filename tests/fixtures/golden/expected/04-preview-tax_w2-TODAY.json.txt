@@ -1,0 +1,6 @@
+$ host.py preview --html --no-open tax_w2-<TODAY>.json
+rc=0
+--- stdout
+wrote .doc-intake/previews/tax_w2-<TODAY>.html: 1 documents, 1 complete, 0 flagged; 1 cards open to check (first of its vendor 1), 0 collapsed; values shown as line 6, without a location 0 (it holds values: only the user opens it)
+tip: open it in a private window: firefox --private-window "<ROOT>/.doc-intake/previews/tax_w2-<TODAY>.html"
+--- stderr

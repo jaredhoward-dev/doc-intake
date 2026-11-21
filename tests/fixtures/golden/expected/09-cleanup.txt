@@ -1,0 +1,9 @@
+$ host.py cleanup --older-than 0 --dry-run
+rc=0
+--- stdout
+would delete: .doc-intake/tasks/invoice-<TODAY>.json
+would delete: .doc-intake/tasks/receipt-<TODAY>.json
+would delete: .doc-intake/tasks/tax_w2-<TODAY>.json
+would delete: .doc-intake/extracts/9d269a76 - paystub p1.txt
+4 would be deleted, 1 kept
+--- stderr

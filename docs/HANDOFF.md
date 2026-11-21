@@ -15,7 +15,7 @@ Where things stand and how to pick the work up on another machine.
     cd doc-intake
     git fetch origin && git worktree add ../doc-intake-stage-1 stage-1
     cd ../doc-intake-stage-1
-    python3 -I -m unittest discover -s tests -t . -v
+    python3 -I -m pytest -q tests
 
 Then the next open issue, in order: port the tests against a fake host, example profiles, the
 CLI, packaging. Each is its own pull request against `stage-1` or, once stage 1 merges, `main`.

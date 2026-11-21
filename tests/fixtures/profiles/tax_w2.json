@@ -1,0 +1,136 @@
+{
+ "name": "tax_w2",
+ "description": "Form W-2, Wage and Tax Statement: boxes 1-6, box 12 codes and amounts, boxes 16-17.",
+ "source": "IRS Form W-2 (2026), https://www.irs.gov/pub/irs-pdf/fw2.pdf, read 2026-11-20.",
+ "never": [
+  "box a employee SSN",
+  "box b EIN",
+  "box d control number",
+  "box 15 employer's state ID number",
+  "names",
+  "addresses"
+ ],
+ "default_group": "w2",
+ "groups": {
+  "w2": {
+   "global": true
+  }
+ },
+ "fields": [
+  {
+   "group": "w2",
+   "name": "box1_wages",
+   "type": "money",
+   "labels": [
+    "1 wages, tips, other compensation",
+    "wages, tips, other compensation",
+    "wages, tips, other comp",
+    "box 1"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box2_federal_income_tax_withheld",
+   "type": "money",
+   "labels": [
+    "2 federal income tax withheld",
+    "federal income tax withheld",
+    "box 2"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box3_social_security_wages",
+   "type": "money",
+   "labels": [
+    "3 social security wages",
+    "social security wages",
+    "box 3"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box4_social_security_tax_withheld",
+   "type": "money",
+   "labels": [
+    "4 social security tax withheld",
+    "social security tax withheld",
+    "box 4"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box5_medicare_wages",
+   "type": "money",
+   "labels": [
+    "5 medicare wages and tips",
+    "medicare wages and tips",
+    "box 5"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box6_medicare_tax_withheld",
+   "type": "money",
+   "labels": [
+    "6 medicare tax withheld",
+    "medicare tax withheld",
+    "box 6"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box12a",
+   "type": "w2_box12",
+   "labels": [
+    "12a see instructions for box 12",
+    "12a"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box12b",
+   "type": "w2_box12",
+   "labels": [
+    "12b"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box12c",
+   "type": "w2_box12",
+   "labels": [
+    "12c"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box12d",
+   "type": "w2_box12",
+   "labels": [
+    "12d"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box16_state_wages",
+   "type": "money",
+   "labels": [
+    "16 state wages, tips, etc",
+    "state wages, tips, etc",
+    "state wages",
+    "box 16"
+   ]
+  },
+  {
+   "group": "w2",
+   "name": "box17_state_income_tax",
+   "type": "money",
+   "labels": [
+    "17 state income tax",
+    "state income tax",
+    "box 17"
+   ]
+  }
+ ]
+}

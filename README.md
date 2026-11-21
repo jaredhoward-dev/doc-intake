@@ -25,7 +25,7 @@ usable on its own. There is no CLI, no example host and no packaged release yet;
 
 ## Tests
 
-    python3 -I -m unittest discover -s tests -t . -v
+    python3 -I -m pytest -q tests
 
 ## License
 

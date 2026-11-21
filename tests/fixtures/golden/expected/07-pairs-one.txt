@@ -1,0 +1,7 @@
+$ host.py pairs invoice-<TODAY>.json
+rc=1
+--- stdout
+pair agree: Example Software Co; invoice 2030-01-08 9.54 = receipt 2030-01-09 9.54; invoice-software.txt + receipt-software.txt (by vendor and date)
+pair MISMATCH: Example Print Shop; invoice 2030-02-02 20.00 != receipt 2030-02-03 21.00; invoice-print.txt + receipt-print.txt (by vendor and date)
+2 pair(s), 1 mismatch(es), 0 unmatched
+--- stderr

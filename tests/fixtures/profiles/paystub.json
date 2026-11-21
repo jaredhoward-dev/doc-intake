@@ -1,0 +1,814 @@
+{
+ "name": "paystub",
+ "description": "A pay stub or earnings statement: dates, gross and net pay, withholding and deductions by type, current and year to date.",
+ "never": [
+  "SSN",
+  "employee ID",
+  "employer's address",
+  "direct-deposit bank, routing or account numbers",
+  "rate of pay or hours (gross only)",
+  "names"
+ ],
+ "default_group": "pay",
+ "groups": {
+  "pay": {
+   "global": true
+  }
+ },
+ "fields": [
+  {
+   "group": "pay",
+   "name": "pay_date",
+   "type": "date",
+   "labels": [
+    "pay date",
+    "check date",
+    "payment date",
+    "advice date",
+    "pay day"
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "period_start",
+   "type": "date",
+   "labels": [
+    "pay period",
+    "period start",
+    "period beginning",
+    "period begin",
+    "period from"
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "period_end",
+   "type": "date",
+   "labels": [
+    [
+     "pay period",
+     1
+    ],
+    "period end",
+    "period ending",
+    "period to"
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "gross_pay_current",
+   "type": "money",
+   "labels": [
+    [
+     "gross pay",
+     "current"
+    ],
+    [
+     "gross earnings",
+     "current"
+    ],
+    [
+     "total gross",
+     "current"
+    ],
+    [
+     "total earnings",
+     "current"
+    ],
+    [
+     "gross",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "gross_pay_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "gross pay",
+     "ytd"
+    ],
+    [
+     "gross earnings",
+     "ytd"
+    ],
+    [
+     "total gross",
+     "ytd"
+    ],
+    [
+     "total earnings",
+     "ytd"
+    ],
+    [
+     "gross",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "net_pay_current",
+   "type": "money",
+   "labels": [
+    [
+     "net pay",
+     "current"
+    ],
+    [
+     "net amount",
+     "current"
+    ],
+    [
+     "take home pay",
+     "current"
+    ],
+    [
+     "net check",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "net_pay_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "net pay",
+     "ytd"
+    ],
+    [
+     "net amount",
+     "ytd"
+    ],
+    [
+     "take home pay",
+     "ytd"
+    ],
+    [
+     "net check",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "federal_income_tax_current",
+   "type": "money",
+   "labels": [
+    [
+     "federal income tax",
+     "current"
+    ],
+    [
+     "fed income tax",
+     "current"
+    ],
+    [
+     "federal withholding",
+     "current"
+    ],
+    [
+     "fed withholding",
+     "current"
+    ],
+    [
+     "federal tax",
+     "current"
+    ],
+    [
+     "fitw",
+     "current"
+    ],
+    [
+     "fed wh",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "federal_income_tax_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "federal income tax",
+     "ytd"
+    ],
+    [
+     "fed income tax",
+     "ytd"
+    ],
+    [
+     "federal withholding",
+     "ytd"
+    ],
+    [
+     "fed withholding",
+     "ytd"
+    ],
+    [
+     "federal tax",
+     "ytd"
+    ],
+    [
+     "fitw",
+     "ytd"
+    ],
+    [
+     "fed wh",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "state_income_tax_current",
+   "type": "money",
+   "labels": [
+    [
+     "state income tax",
+     "current"
+    ],
+    [
+     "state withholding",
+     "current"
+    ],
+    [
+     "state tax",
+     "current"
+    ],
+    [
+     "sitw",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "state_income_tax_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "state income tax",
+     "ytd"
+    ],
+    [
+     "state withholding",
+     "ytd"
+    ],
+    [
+     "state tax",
+     "ytd"
+    ],
+    [
+     "sitw",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "social_security_current",
+   "type": "money",
+   "labels": [
+    [
+     "social security tax",
+     "current"
+    ],
+    [
+     "social security",
+     "current"
+    ],
+    [
+     "oasdi",
+     "current"
+    ],
+    [
+     "fica oasdi",
+     "current"
+    ],
+    [
+     "ss tax",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "social_security_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "social security tax",
+     "ytd"
+    ],
+    [
+     "social security",
+     "ytd"
+    ],
+    [
+     "oasdi",
+     "ytd"
+    ],
+    [
+     "fica oasdi",
+     "ytd"
+    ],
+    [
+     "ss tax",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "medicare_current",
+   "type": "money",
+   "labels": [
+    [
+     "medicare tax",
+     "current"
+    ],
+    [
+     "medicare",
+     "current"
+    ],
+    [
+     "fica medicare",
+     "current"
+    ],
+    [
+     "fica med",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "medicare_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "medicare tax",
+     "ytd"
+    ],
+    [
+     "medicare",
+     "ytd"
+    ],
+    [
+     "fica medicare",
+     "ytd"
+    ],
+    [
+     "fica med",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_401k_403b_current",
+   "type": "money",
+   "labels": [
+    [
+     "401(k)",
+     "current"
+    ],
+    [
+     "401k",
+     "current"
+    ],
+    [
+     "403(b)",
+     "current"
+    ],
+    [
+     "403b",
+     "current"
+    ],
+    [
+     "401k pre-tax",
+     "current"
+    ],
+    [
+     "pre-tax 401k",
+     "current"
+    ]
+   ],
+   "not": [
+    "roth",
+    "after-tax",
+    "after tax",
+    "match",
+    "loan"
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_401k_403b_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "401(k)",
+     "ytd"
+    ],
+    [
+     "401k",
+     "ytd"
+    ],
+    [
+     "403(b)",
+     "ytd"
+    ],
+    [
+     "403b",
+     "ytd"
+    ],
+    [
+     "401k pre-tax",
+     "ytd"
+    ],
+    [
+     "pre-tax 401k",
+     "ytd"
+    ]
+   ],
+   "not": [
+    "roth",
+    "after-tax",
+    "after tax",
+    "match",
+    "loan"
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_hsa_current",
+   "type": "money",
+   "labels": [
+    [
+     "hsa",
+     "current"
+    ],
+    [
+     "health savings",
+     "current"
+    ]
+   ],
+   "not": [
+    "employer"
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_hsa_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "hsa",
+     "ytd"
+    ],
+    [
+     "health savings",
+     "ytd"
+    ]
+   ],
+   "not": [
+    "employer"
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_medical_current",
+   "type": "money",
+   "labels": [
+    [
+     "medical premium",
+     "current"
+    ],
+    [
+     "medical",
+     "current"
+    ],
+    [
+     "health insurance",
+     "current"
+    ],
+    [
+     "med pre-tax",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_medical_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "medical premium",
+     "ytd"
+    ],
+    [
+     "medical",
+     "ytd"
+    ],
+    [
+     "health insurance",
+     "ytd"
+    ],
+    [
+     "med pre-tax",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_dental_current",
+   "type": "money",
+   "labels": [
+    [
+     "dental premium",
+     "current"
+    ],
+    [
+     "dental",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_dental_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "dental premium",
+     "ytd"
+    ],
+    [
+     "dental",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_vision_current",
+   "type": "money",
+   "labels": [
+    [
+     "vision premium",
+     "current"
+    ],
+    [
+     "vision",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_vision_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "vision premium",
+     "ytd"
+    ],
+    [
+     "vision",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_fsa_current",
+   "type": "money",
+   "labels": [
+    [
+     "health fsa",
+     "current"
+    ],
+    [
+     "fsa",
+     "current"
+    ],
+    [
+     "flexible spending",
+     "current"
+    ],
+    [
+     "dependent care fsa",
+     "current"
+    ],
+    [
+     "dependent care",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "pretax_fsa_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "health fsa",
+     "ytd"
+    ],
+    [
+     "fsa",
+     "ytd"
+    ],
+    [
+     "flexible spending",
+     "ytd"
+    ],
+    [
+     "dependent care fsa",
+     "ytd"
+    ],
+    [
+     "dependent care",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_roth_401k_current",
+   "type": "money",
+   "labels": [
+    [
+     "roth 401(k)",
+     "current"
+    ],
+    [
+     "roth 401k",
+     "current"
+    ],
+    [
+     "roth 403(b)",
+     "current"
+    ],
+    [
+     "roth",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_roth_401k_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "roth 401(k)",
+     "ytd"
+    ],
+    [
+     "roth 401k",
+     "ytd"
+    ],
+    [
+     "roth 403(b)",
+     "ytd"
+    ],
+    [
+     "roth",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_after_tax_401k_current",
+   "type": "money",
+   "labels": [
+    [
+     "after-tax 401(k)",
+     "current"
+    ],
+    [
+     "after-tax 401k",
+     "current"
+    ],
+    [
+     "after tax 401k",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_after_tax_401k_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "after-tax 401(k)",
+     "ytd"
+    ],
+    [
+     "after-tax 401k",
+     "ytd"
+    ],
+    [
+     "after tax 401k",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_supplemental_life_current",
+   "type": "money",
+   "labels": [
+    [
+     "supplemental life",
+     "current"
+    ],
+    [
+     "supp life",
+     "current"
+    ],
+    [
+     "voluntary life",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_supplemental_life_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "supplemental life",
+     "ytd"
+    ],
+    [
+     "supp life",
+     "ytd"
+    ],
+    [
+     "voluntary life",
+     "ytd"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_disability_current",
+   "type": "money",
+   "labels": [
+    [
+     "long term disability",
+     "current"
+    ],
+    [
+     "short term disability",
+     "current"
+    ],
+    [
+     "ltd",
+     "current"
+    ],
+    [
+     "std",
+     "current"
+    ]
+   ]
+  },
+  {
+   "group": "pay",
+   "name": "posttax_disability_ytd",
+   "type": "money",
+   "labels": [
+    [
+     "long term disability",
+     "ytd"
+    ],
+    [
+     "short term disability",
+     "ytd"
+    ],
+    [
+     "ltd",
+     "ytd"
+    ],
+    [
+     "std",
+     "ytd"
+    ]
+   ]
+  }
+ ]
+}

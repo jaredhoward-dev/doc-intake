@@ -1,0 +1,5 @@
+$ host.py approve 9d269a76 - paystub p1.txt
+rc=0
+--- stdout
+approved: 9d269a76 - paystub p1.txt (extract, pages 1 of 1)
+--- stderr

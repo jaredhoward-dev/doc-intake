@@ -1,0 +1,9 @@
+EXAMPLE WATER UTILITY
+Statement date 01/20/2030
+Service address on file
+Billing period January 2030
+Water usage charge for the month of January, metered at the house, with the
+base service fee and the sewer charge for the same billing period, as read on
+the meter by the field crew on their regular route through the neighborhood.
+Amount due $48.20 by 02/10/2030
+Questions: call the number on the back of this statement

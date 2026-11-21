@@ -1,0 +1,7 @@
+EXAMPLE SOFTWARE CO
+Invoice
+Invoice number EX-1001
+Invoice date 01/08/2030
+Monthly plan     9.00
+Tax              0.54
+Amount due       $9.54

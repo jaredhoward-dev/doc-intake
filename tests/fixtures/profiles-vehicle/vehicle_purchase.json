@@ -1,0 +1,415 @@
+{
+ "name": "vehicle_purchase",
+ "description": "A vehicle purchase: a dealer's buyer's order or bill of sale, or a retail installment sale contract (the Truth in Lending boxes, the payment schedule and the itemization of the amount financed). Year, make, model and trim; the price, dealer and government fees, sales and use tax, trade-in, down payment and the loan's terms; optional GAP and service contracts; the seller; the GVWR in pounds when printed. Used to record the vehicle as an asset (cost basis) and to give the preparer the loan's terms.",
+ "source": "Truth in Lending disclosures for a closed-end credit sale (12 CFR 1026.18: amount financed and its itemization, finance charge, annual percentage rate, total of payments, payment schedule, total sale price); laid out as a dealer retail installment sale contract (New/Used, Year, Make and Model header row; the federal boxes; Itemization of Amount Financed lines 1 to 5). An example profile for the tests: a host tunes the labels on its own documents with fields --labels.",
+ "never": [
+  "the VIN",
+  "buyer and co-buyer names",
+  "addresses and phone numbers",
+  "the deal, contract, stock and R.O.S. numbers",
+  "account numbers",
+  "date of birth and driver's license"
+ ],
+ "default_group": "v",
+ "groups": {
+  "v": {
+   "global": true
+  }
+ },
+ "fields": [
+  {
+   "group": "v",
+   "name": "contract_date",
+   "type": "date",
+   "labels": [
+    "contract date",
+    "date of contract",
+    "date of sale",
+    "sale date",
+    "purchase date",
+    "date of purchase",
+    "delivery date",
+    [
+     "buyer signs",
+     "line"
+    ],
+    [
+     "seller signs",
+     "line"
+    ],
+    "date"
+   ],
+   "document_date": true,
+   "anywhere": "earliest",
+   "label_at_cell_start": true,
+   "required": true,
+   "not": [
+    "first payment",
+    "payment due",
+    "birth",
+    "expir",
+    "due date",
+    "payments are due",
+    "beginning"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "year",
+   "type": "year",
+   "labels": [
+    "model year",
+    "vehicle year",
+    "year make model",
+    "year make",
+    "year"
+   ],
+   "required": true
+  },
+  {
+   "group": "v",
+   "name": "make",
+   "type": "vehicle_make",
+   "labels": [
+    "year make model",
+    "year make",
+    "make and model",
+    "make & model",
+    "vehicle make",
+    "make"
+   ],
+   "required": true
+  },
+  {
+   "group": "v",
+   "name": "make_model",
+   "type": "vehicle",
+   "labels": [
+    "year make model",
+    "year make",
+    "make and model",
+    "make & model",
+    "vehicle description",
+    "make"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "model",
+   "type": "short_text",
+   "labels": [
+    "model",
+    "vehicle model"
+   ],
+   "label_at_cell_start": true,
+   "exclusive_label": true,
+   "not": [
+    "year"
+   ],
+   "model_from": "make_model"
+  },
+  {
+   "group": "v",
+   "name": "trim",
+   "type": "short_text",
+   "labels": [
+    "trim",
+    "trim level",
+    "series"
+   ],
+   "label_at_cell_start": true
+  },
+  {
+   "group": "v",
+   "name": "gvwr_lbs",
+   "type": "weight_lbs",
+   "labels": [
+    "gvwr",
+    "gross vehicle weight rating",
+    "gvw rating",
+    "gross vehicle weight"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "cash_price",
+   "type": "money",
+   "labels": [
+    [
+     "cash price (including",
+     "last"
+    ],
+    [
+     "cash price",
+     "last"
+    ],
+    "selling price",
+    "vehicle price",
+    "sale price",
+    "sales price",
+    "price of vehicle"
+   ],
+   "required": true,
+   "not": [
+    "unpaid balance",
+    "total sale price"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "sales_tax",
+   "type": "money",
+   "labels": [
+    "motor vehicle sales and use tax",
+    "sales and use tax",
+    "sales & use tax",
+    "cash price (including",
+    "government taxes not included in cash price",
+    "taxes not included in cash price",
+    "sales tax"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "dealer_fees",
+   "type": "money",
+   "labels": [
+    "dealer processing fee",
+    "dealer processing charge",
+    "processing fee",
+    "processing charge",
+    "documentation fee",
+    "doc fee",
+    "dealer fee",
+    "dealer fees"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "official_fees",
+   "type": "money",
+   "labels": [
+    "official fees paid to government agencies",
+    "official fees"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "title_fees",
+   "type": "money",
+   "labels": [
+    "certificate of title fees",
+    "title fees",
+    "title fee",
+    "government certificate of title"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "registration_fees",
+   "type": "money",
+   "labels": [
+    "registration fees",
+    "registration fee",
+    "license and/or registration fees",
+    "license and registration fees",
+    "government license and/or registration fees",
+    "license fees"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "title_and_registration_fees",
+   "type": "money",
+   "labels": [
+    "title and registration",
+    "title & registration",
+    "title, tags",
+    "tags and title",
+    "title/registration"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "trade_in_allowance",
+   "type": "money",
+   "labels": [
+    "gross trade-in",
+    "trade-in allowance",
+    "trade in allowance",
+    "trade allowance",
+    "trade-in value"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "trade_in_payoff",
+   "type": "money",
+   "labels": [
+    "pay off made by seller",
+    "payoff made by seller",
+    "trade-in payoff",
+    "lien payoff"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "down_payment",
+   "type": "money",
+   "labels": [
+    [
+     "total downpayment",
+     "last"
+    ],
+    [
+     "total down payment",
+     "last"
+    ],
+    "cash downpayment",
+    "cash down payment",
+    "down payment",
+    "downpayment",
+    "cash down"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "optional_gap_contract",
+   "type": "money",
+   "labels": [
+    "optional gap contract",
+    "gap contract",
+    "gap waiver",
+    "gap insurance",
+    "debt cancellation agreement",
+    "guaranteed asset protection"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "service_contract",
+   "type": "money",
+   "labels": [
+    "service contract",
+    "vehicle service agreement",
+    "extended service contract",
+    "extended warranty",
+    "maintenance plan",
+    "prepaid maintenance"
+   ]
+  },
+  {
+   "group": "v",
+   "name": "amount_financed",
+   "type": "money",
+   "labels": [
+    "amount financed",
+    "credit provided to you or on your behalf",
+    "credit provided"
+   ],
+   "below_lines": 6,
+   "required": true,
+   "below_values_only": true
+  },
+  {
+   "group": "v",
+   "name": "apr",
+   "type": "percent",
+   "labels": [
+    "annual percentage rate",
+    "the cost of your credit as a yearly rate",
+    "yearly rate",
+    "apr"
+   ],
+   "below_lines": 6,
+   "label_at_cell_start": true,
+   "below_values_only": true
+  },
+  {
+   "group": "v",
+   "name": "term_months",
+   "type": "count",
+   "labels": [
+    "number of payments",
+    "no. of payments",
+    "term (months)",
+    "term in months",
+    "term months",
+    "number of monthly payments",
+    [
+     "monthly beginning",
+     "before"
+    ]
+   ],
+   "below_lines": 4
+  },
+  {
+   "group": "v",
+   "name": "monthly_payment",
+   "type": "money",
+   "labels": [
+    "amount of payments",
+    "amount of each payment",
+    "monthly payment",
+    "payment amount",
+    [
+     "monthly beginning",
+     "before"
+    ]
+   ],
+   "below_lines": 4
+  },
+  {
+   "group": "v",
+   "name": "total_of_payments",
+   "type": "money",
+   "labels": [
+    "total of payments",
+    "after you have made all payments as scheduled",
+    "you will have paid after"
+   ],
+   "below_lines": 6,
+   "below_values_only": true
+  },
+  {
+   "group": "v",
+   "name": "finance_charge",
+   "type": "money",
+   "labels": [
+    "finance charge",
+    "the dollar amount the credit will cost you",
+    "credit will cost you"
+   ],
+   "below_lines": 6,
+   "label_at_cell_start": true,
+   "below_values_only": true
+  },
+  {
+   "group": "v",
+   "name": "total_sale_price",
+   "type": "money",
+   "labels": [
+    "total sale price",
+    "the total cost of your purchase on credit",
+    "total cost of your purchase"
+   ],
+   "below_lines": 6,
+   "below_values_only": true
+  },
+  {
+   "group": "v",
+   "name": "seller",
+   "type": "org_name",
+   "labels": [
+    "seller-creditor (name and address)",
+    "seller-creditor",
+    "seller",
+    "dealer",
+    "dealership",
+    "sold by"
+   ],
+   "known_vendor": "dealer",
+   "label_at_cell_start": true
+  }
+ ]
+}

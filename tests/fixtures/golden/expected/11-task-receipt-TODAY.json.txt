@@ -1,0 +1,50 @@
+{
+ "approved": true,
+ "dropped": {},
+ "fields": {
+  "inbox/garden-order.eml": [
+   "receipt.date",
+   "receipt.payment_method",
+   "receipt.tax",
+   "receipt.total",
+   "receipt.vendor"
+  ],
+  "inbox/receipt-print.txt": [
+   "receipt.date",
+   "receipt.total",
+   "receipt.vendor"
+  ],
+  "inbox/receipt-software.txt": [
+   "receipt.date",
+   "receipt.payment_method",
+   "receipt.tax",
+   "receipt.total",
+   "receipt.vendor"
+  ]
+ },
+ "keep": false,
+ "keys": [
+  "approved",
+  "approved_at",
+  "approved_hash",
+  "created",
+  "dropped",
+  "keep",
+  "missing",
+  "model",
+  "profile_sha256",
+  "sources",
+  "task",
+  "values"
+ ],
+ "missing": [
+  "receipt.tax",
+  "receipt.payment_method"
+ ],
+ "sources": [
+  "inbox/receipt-software.txt",
+  "inbox/receipt-print.txt",
+  "inbox/garden-order.eml"
+ ],
+ "task": "receipt"
+}

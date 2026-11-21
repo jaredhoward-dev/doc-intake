@@ -1,0 +1,823 @@
+{
+ "name": "benefits",
+ "description": "Employer benefits guides, open-enrollment summaries and SBCs: plan costs and coverage only.",
+ "never": [
+  "names",
+  "member, subscriber or group IDs",
+  "employee IDs",
+  "SSNs",
+  "dates of birth",
+  "addresses"
+ ],
+ "default_group": "medical",
+ "groups": {
+  "accounts": {
+   "global": true,
+   "words": [
+    "flexible spending",
+    "spending account",
+    "savings account",
+    "fsa"
+   ]
+  },
+  "dental": {
+   "per_plan": true,
+   "words": [
+    "dental",
+    "dppo",
+    "dhmo"
+   ],
+   "plan_markers": [
+    "plan",
+    "ppo",
+    "hmo",
+    "hdhp",
+    "epo",
+    "pos",
+    "hsa",
+    "dppo",
+    "dhmo",
+    "basic",
+    "enhanced",
+    "premier",
+    "standard",
+    "gold",
+    "silver",
+    "bronze",
+    "platinum",
+    "buy-up",
+    "core",
+    "value",
+    "base",
+    "high",
+    "low",
+    "choice",
+    "select",
+    "plus"
+   ]
+  },
+  "vision": {
+   "per_plan": true,
+   "words": [
+    "vision",
+    "eye care"
+   ],
+   "plan_markers": [
+    "plan",
+    "ppo",
+    "hmo",
+    "hdhp",
+    "epo",
+    "pos",
+    "hsa",
+    "dppo",
+    "dhmo",
+    "basic",
+    "enhanced",
+    "premier",
+    "standard",
+    "gold",
+    "silver",
+    "bronze",
+    "platinum",
+    "buy-up",
+    "core",
+    "value",
+    "base",
+    "high",
+    "low",
+    "choice",
+    "select",
+    "plus"
+   ]
+  },
+  "medical": {
+   "per_plan": true,
+   "words": [
+    "medical",
+    "ppo",
+    "hmo",
+    "hdhp",
+    "epo",
+    "pos",
+    "high deductible",
+    "health plan"
+   ],
+   "plan_markers": [
+    "plan",
+    "ppo",
+    "hmo",
+    "hdhp",
+    "epo",
+    "pos",
+    "hsa",
+    "dppo",
+    "dhmo",
+    "basic",
+    "enhanced",
+    "premier",
+    "standard",
+    "gold",
+    "silver",
+    "bronze",
+    "platinum",
+    "buy-up",
+    "core",
+    "value",
+    "base",
+    "high",
+    "low",
+    "choice",
+    "select",
+    "plus"
+   ]
+  }
+ },
+ "fields": [
+  {
+   "group": "medical",
+   "name": "plan_name",
+   "type": "plan_name",
+   "labels": [],
+   "note": "from the plan heading"
+  },
+  {
+   "group": "medical",
+   "name": "plan_type",
+   "type": "plan_type",
+   "labels": [
+    "plan type"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "premium_employee",
+   "type": "money",
+   "labels": [
+    "employee only",
+    "ee only",
+    "you only",
+    "self only",
+    "employee"
+   ],
+   "not": [
+    "spouse",
+    "child",
+    "family",
+    "+"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "premium_employee_spouse",
+   "type": "money",
+   "labels": [
+    "employee + spouse",
+    "employee and spouse",
+    "ee + spouse",
+    "you + spouse",
+    "employee/spouse"
+   ],
+   "not": []
+  },
+  {
+   "group": "medical",
+   "name": "premium_employee_children",
+   "type": "money",
+   "labels": [
+    "employee + child(ren)",
+    "employee + children",
+    "employee + child",
+    "ee + child(ren)",
+    "ee + children",
+    "you + children",
+    "employee/child(ren)"
+   ],
+   "not": []
+  },
+  {
+   "group": "medical",
+   "name": "premium_family",
+   "type": "money",
+   "labels": [
+    "employee + family",
+    "ee + family",
+    "you + family",
+    "family"
+   ],
+   "not": [
+    "deductible",
+    "out-of-pocket",
+    "out of pocket",
+    "maximum",
+    "annual max"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "deductible_individual",
+   "type": "money",
+   "labels": [
+    "individual deductible",
+    "deductible individual",
+    "annual deductible",
+    "deductible"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "deductible_family",
+   "type": "money",
+   "labels": [
+    "family deductible",
+    "deductible family",
+    [
+     "annual deductible",
+     1
+    ],
+    [
+     "deductible",
+     1
+    ]
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "oop_max_individual",
+   "type": "money",
+   "labels": [
+    "individual out-of-pocket maximum",
+    "out-of-pocket maximum individual",
+    "out-of-pocket maximum",
+    "out-of-pocket max",
+    "out of pocket maximum",
+    "out of pocket max",
+    "oop max"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "oop_max_family",
+   "type": "money",
+   "labels": [
+    "family out-of-pocket maximum",
+    "out-of-pocket maximum family",
+    [
+     "out-of-pocket maximum",
+     1
+    ],
+    [
+     "out-of-pocket max",
+     1
+    ],
+    [
+     "out of pocket maximum",
+     1
+    ],
+    [
+     "out of pocket max",
+     1
+    ],
+    [
+     "oop max",
+     1
+    ]
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "primary_care_copay",
+   "type": "cost",
+   "labels": [
+    "primary care visit",
+    "primary care",
+    "pcp visit",
+    "pcp",
+    "office visit"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "specialist_copay",
+   "type": "cost",
+   "labels": [
+    "specialist visit",
+    "specialist"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "urgent_care_copay",
+   "type": "cost",
+   "labels": [
+    "urgent care"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "er_copay",
+   "type": "cost",
+   "labels": [
+    "emergency room",
+    "emergency room care",
+    "er visit",
+    "emergency care"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "coinsurance",
+   "type": "cost",
+   "labels": [
+    "coinsurance",
+    "plan coinsurance"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "rx_generic",
+   "type": "cost",
+   "labels": [
+    "generic drugs",
+    "generic",
+    "tier 1"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "rx_preferred_brand",
+   "type": "cost",
+   "labels": [
+    "preferred brand drugs",
+    "preferred brand",
+    "tier 2"
+   ],
+   "not": [
+    "non-preferred",
+    "non preferred"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "rx_non_preferred_brand",
+   "type": "cost",
+   "labels": [
+    "non-preferred brand drugs",
+    "non-preferred brand",
+    "non preferred brand",
+    "tier 3"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "rx_specialty",
+   "type": "cost",
+   "labels": [
+    "specialty drugs",
+    "specialty",
+    "tier 4"
+   ]
+  },
+  {
+   "group": "medical",
+   "name": "employer_hsa_hra_contribution",
+   "type": "money",
+   "labels": [
+    "employer hsa contribution",
+    "employer contribution to hsa",
+    "employer hsa seed",
+    "company hsa contribution",
+    "employer hra contribution",
+    "employer hra",
+    "hra funding"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "plan_name",
+   "type": "plan_name",
+   "labels": [],
+   "note": "from the plan heading"
+  },
+  {
+   "group": "dental",
+   "name": "premium_employee",
+   "type": "money",
+   "labels": [
+    "employee only",
+    "ee only",
+    "you only",
+    "self only",
+    "employee"
+   ],
+   "not": [
+    "spouse",
+    "child",
+    "family",
+    "+"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "premium_employee_spouse",
+   "type": "money",
+   "labels": [
+    "employee + spouse",
+    "employee and spouse",
+    "ee + spouse",
+    "you + spouse",
+    "employee/spouse"
+   ],
+   "not": []
+  },
+  {
+   "group": "dental",
+   "name": "premium_employee_children",
+   "type": "money",
+   "labels": [
+    "employee + child(ren)",
+    "employee + children",
+    "employee + child",
+    "ee + child(ren)",
+    "ee + children",
+    "you + children",
+    "employee/child(ren)"
+   ],
+   "not": []
+  },
+  {
+   "group": "dental",
+   "name": "premium_family",
+   "type": "money",
+   "labels": [
+    "employee + family",
+    "ee + family",
+    "you + family",
+    "family"
+   ],
+   "not": [
+    "deductible",
+    "out-of-pocket",
+    "out of pocket",
+    "maximum",
+    "annual max"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "annual_maximum",
+   "type": "money",
+   "labels": [
+    "annual maximum per person",
+    "annual maximum",
+    "calendar year maximum",
+    "annual max",
+    "plan year maximum"
+   ],
+   "not": [
+    "orthodont",
+    "lifetime"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "deductible",
+   "type": "money",
+   "labels": [
+    "deductible",
+    "annual deductible"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "preventive_pct",
+   "type": "percent",
+   "labels": [
+    "preventive services",
+    "preventive care",
+    "preventive",
+    "diagnostic and preventive",
+    "diagnostic & preventive",
+    "type a"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "basic_pct",
+   "type": "percent",
+   "labels": [
+    "basic services",
+    "basic restorative",
+    "basic",
+    "type b"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "major_pct",
+   "type": "percent",
+   "labels": [
+    "major services",
+    "major restorative",
+    "major",
+    "type c"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "orthodontia_pct",
+   "type": "percent",
+   "labels": [
+    "orthodontia",
+    "orthodontics",
+    "orthodontic services",
+    "type d"
+   ],
+   "not": [
+    "lifetime",
+    "maximum",
+    "max",
+    "adult",
+    "eligib"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "ortho_lifetime_max",
+   "type": "money",
+   "labels": [
+    "orthodontia lifetime maximum",
+    "orthodontic lifetime maximum",
+    "ortho lifetime max",
+    "lifetime orthodontia maximum",
+    "lifetime orthodontic maximum",
+    "orthodontia lifetime max"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "ortho_adult_eligibility",
+   "type": "eligibility",
+   "labels": [
+    "orthodontia eligibility",
+    "orthodontic eligibility",
+    "ortho eligibility",
+    "adult orthodontia",
+    "adult orthodontics",
+    "orthodontia age limit"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "waiting_period_basic",
+   "type": "duration",
+   "labels": [
+    "waiting period basic",
+    "basic waiting period",
+    "waiting period for basic"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "waiting_period_major",
+   "type": "duration",
+   "labels": [
+    "waiting period major",
+    "major waiting period",
+    "waiting period for major"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "waiting_periods",
+   "type": "duration",
+   "labels": [
+    "waiting periods",
+    "waiting period"
+   ],
+   "not": [
+    "basic",
+    "major"
+   ]
+  },
+  {
+   "group": "dental",
+   "name": "oon_reimbursement_basis",
+   "type": "basis",
+   "labels": [
+    "out-of-network reimbursement",
+    "out of network reimbursement",
+    "out-of-network basis",
+    "non-network reimbursement",
+    "reimbursement basis",
+    "oon reimbursement"
+   ]
+  },
+  {
+   "group": "vision",
+   "name": "plan_name",
+   "type": "plan_name",
+   "labels": [],
+   "note": "from the plan heading"
+  },
+  {
+   "group": "vision",
+   "name": "premium_employee",
+   "type": "money",
+   "labels": [
+    "employee only",
+    "ee only",
+    "you only",
+    "self only",
+    "employee"
+   ],
+   "not": [
+    "spouse",
+    "child",
+    "family",
+    "+"
+   ]
+  },
+  {
+   "group": "vision",
+   "name": "premium_employee_spouse",
+   "type": "money",
+   "labels": [
+    "employee + spouse",
+    "employee and spouse",
+    "ee + spouse",
+    "you + spouse",
+    "employee/spouse"
+   ],
+   "not": []
+  },
+  {
+   "group": "vision",
+   "name": "premium_employee_children",
+   "type": "money",
+   "labels": [
+    "employee + child(ren)",
+    "employee + children",
+    "employee + child",
+    "ee + child(ren)",
+    "ee + children",
+    "you + children",
+    "employee/child(ren)"
+   ],
+   "not": []
+  },
+  {
+   "group": "vision",
+   "name": "premium_family",
+   "type": "money",
+   "labels": [
+    "employee + family",
+    "ee + family",
+    "you + family",
+    "family"
+   ],
+   "not": [
+    "deductible",
+    "out-of-pocket",
+    "out of pocket",
+    "maximum",
+    "annual max"
+   ]
+  },
+  {
+   "group": "vision",
+   "name": "exam_copay",
+   "type": "cost",
+   "labels": [
+    "eye exam",
+    "exam copay",
+    "routine exam",
+    "exam"
+   ]
+  },
+  {
+   "group": "vision",
+   "name": "frames_allowance",
+   "type": "money",
+   "labels": [
+    "frames allowance",
+    "frame allowance",
+    "frames"
+   ]
+  },
+  {
+   "group": "vision",
+   "name": "lenses_allowance",
+   "type": "cost",
+   "labels": [
+    "lenses allowance",
+    "lens allowance",
+    "standard lenses",
+    "lenses"
+   ],
+   "not": [
+    "contact"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "health_fsa_limit",
+   "type": "money",
+   "labels": [
+    "health care fsa",
+    "health fsa",
+    "healthcare fsa",
+    "medical fsa",
+    "health care flexible spending account",
+    "fsa annual limit",
+    "fsa limit"
+   ],
+   "not": [
+    "dependent",
+    "carryover",
+    "carry-over",
+    "grace"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "dependent_care_fsa_limit",
+   "type": "money",
+   "labels": [
+    "dependent care fsa",
+    "dependent care flexible spending account",
+    "dependent care account",
+    "dcap"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "hsa_limit_self",
+   "type": "money",
+   "labels": [
+    "hsa limit self-only",
+    "hsa self-only limit",
+    "hsa contribution limit self",
+    "hsa limit individual",
+    "hsa individual limit",
+    "hsa self-only",
+    "hsa contribution limit"
+   ],
+   "not": [
+    "family",
+    "catch-up",
+    "catch up"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "hsa_limit_family",
+   "type": "money",
+   "labels": [
+    "hsa limit family",
+    "hsa family limit",
+    "hsa contribution limit family",
+    "hsa family"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "hsa_catch_up",
+   "type": "money",
+   "labels": [
+    "hsa catch-up",
+    "catch-up contribution",
+    "age 55 catch-up"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "employer_match",
+   "type": "cost",
+   "labels": [
+    "employer match",
+    "company match",
+    "employer matching contribution"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "fsa_carryover",
+   "type": "money_or_none",
+   "labels": [
+    "carryover",
+    "carry-over",
+    "rollover",
+    "carryover amount"
+   ]
+  },
+  {
+   "group": "accounts",
+   "name": "fsa_grace_period",
+   "type": "duration",
+   "labels": [
+    "grace period"
+   ]
+  }
+ ]
+}

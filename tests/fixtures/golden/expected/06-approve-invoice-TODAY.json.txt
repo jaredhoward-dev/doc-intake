@@ -1,0 +1,5 @@
+$ host.py approve invoice-<TODAY>.json
+rc=0
+--- stdout
+approved: invoice-<TODAY>.json (2 documents, 11 fields)
+--- stderr

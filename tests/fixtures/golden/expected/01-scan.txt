@@ -1,0 +1,32 @@
+$ host.py scan --year 2030
+rc=0
+--- stdout
+fingerprinting existing records (first run)…
+records: 3 read: 1 fingerprinted, 2 with no text to compare, 0 not documents (sha256 only), 0 skipped
+HELD logins.txt: secret material: move it to a password manager, then delete (in inbox/.held/; password 1, email 1)
+#   file                  type  pages  sensitive                            destination                                       suggested name
+1   garden-order.eml      text  1      none                                 Expenses/2030                                     2030-03-04 - Receipt.txt
+2   invoice-print.txt     text  1      none                                 Expenses/2030                                     2030-02-02 - Invoice.txt
+3   invoice-software.txt  text  1      none                                 Expenses/2030                                     2030-01-08 - Invoice.txt
+4   list.txt              text  1      none                                 -                                                 2030-01-01 - list.txt
+5   logins.txt            text  1      password 1, email 1                  held                                              2030-01-01 - logins.txt
+6   paystub.txt           text  1      routing 1, account 1, employee-id 1  Pay/2030                                          2030-01-15 - Pay stub.txt
+7   receipt-print.txt     text  1      none                                 Expenses/2030                                     2030-02-03 - Receipt.txt
+8   receipt-software.txt  text  1      none                                 Expenses/2030                                     2030-01-09 - Receipt.txt
+9   w2-2030.txt           text  1      ein 1                                Tax/2030                                          2030-01-01 - Form W-2.txt
+10  water-copy.txt        text  1      none                                 duplicate of Archive/2030/2030-01-20 - Water bi…  2030-01-20 - water-copy.txt
+11  water-rescan.txt      text  1      none                                 -                                                 2030-01-20 - water-rescan.txt
+  1: next: fields --task receipt
+  2: next: fields --task invoice
+  3: next: fields --task invoice
+  4: no profile: ask the user which fields are needed; date: from file — check it
+  6: next: fields --task paystub
+  7: next: fields --task receipt
+  8: next: fields --task receipt
+  9: next: fields --task tax_w2; date: from file — check it
+  11: possible duplicate of Archive/2030/2030-01-20 - Water bill.txt (similarity 100%); no profile: ask the user which fields are needed
+
+1 exact copy of a file already in the records or earlier in this batch, left in the inbox; `file` won't file them. Remove them after checking, once the backup is verified.
+
+1 possible duplicate (similar text, not the same bytes): check them by name and date. `file` asks before filing one (--yes files it).
+--- stderr

@@ -1,0 +1,135 @@
+{
+ "name": "treatment_estimate",
+ "description": "A dental or medical treatment estimate: procedures, fees and the insurance and patient estimates.",
+ "never": [
+  "patient name",
+  "member or subscriber IDs",
+  "date of birth",
+  "provider license numbers"
+ ],
+ "default_group": "totals",
+ "groups": {
+  "totals": {
+   "global": true
+  },
+  "items": {}
+ },
+ "fields": [
+  {
+   "group": "totals",
+   "name": "total_fee",
+   "type": "money",
+   "labels": [
+    "total fee",
+    "total fees",
+    "total charges",
+    "total cost",
+    "treatment total"
+   ]
+  },
+  {
+   "group": "totals",
+   "name": "total_insurance_estimate",
+   "type": "money",
+   "labels": [
+    "total insurance estimate",
+    "insurance estimate total",
+    "estimated insurance",
+    "total ins est",
+    "total insurance portion",
+    "insurance portion"
+   ]
+  },
+  {
+   "group": "totals",
+   "name": "total_patient_estimate",
+   "type": "money",
+   "labels": [
+    "total patient estimate",
+    "estimated patient portion",
+    "patient portion",
+    "your estimated portion",
+    "patient estimate",
+    "patient balance",
+    "total pt est"
+   ]
+  }
+ ],
+ "tables": [
+  {
+   "group": "items",
+   "header_min": 3,
+   "row_requires": [
+    "cdt_code",
+    "fee"
+   ],
+   "columns": [
+    {
+     "name": "cdt_code",
+     "type": "cdt_code",
+     "labels": [
+      "cdt code",
+      "ada code",
+      "proc code",
+      "code",
+      "cdt"
+     ]
+    },
+    {
+     "name": "tooth_area",
+     "type": "tooth_area",
+     "labels": [
+      "tooth",
+      "th",
+      "area",
+      "quad",
+      "site"
+     ]
+    },
+    {
+     "name": "procedure",
+     "type": "short_text",
+     "labels": [
+      "description",
+      "procedure",
+      "service",
+      "treatment"
+     ]
+    },
+    {
+     "name": "fee",
+     "type": "money",
+     "labels": [
+      "fee",
+      "office fee",
+      "charge",
+      "cost"
+     ]
+    },
+    {
+     "name": "insurance_estimate",
+     "type": "money",
+     "labels": [
+      "insurance estimate",
+      "ins est",
+      "ins. est",
+      "ins portion",
+      "insurance"
+     ]
+    },
+    {
+     "name": "patient_estimate",
+     "type": "money",
+     "labels": [
+      "patient estimate",
+      "pt est",
+      "pt. est",
+      "patient portion",
+      "your portion",
+      "patient"
+     ]
+    }
+   ]
+  }
+ ]
+}

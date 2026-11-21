@@ -1,0 +1,48 @@
+{
+ "approved": true,
+ "dropped": {},
+ "fields": {
+  "inbox/invoice-print.txt": [
+   "invoice.currency",
+   "invoice.invoice_date",
+   "invoice.invoice_number",
+   "invoice.total",
+   "invoice.vendor"
+  ],
+  "inbox/invoice-software.txt": [
+   "invoice.currency",
+   "invoice.invoice_date",
+   "invoice.invoice_number",
+   "invoice.tax",
+   "invoice.total",
+   "invoice.vendor"
+  ]
+ },
+ "keep": false,
+ "keys": [
+  "approved",
+  "approved_at",
+  "approved_hash",
+  "created",
+  "dropped",
+  "keep",
+  "missing",
+  "model",
+  "profile_sha256",
+  "sources",
+  "task",
+  "values"
+ ],
+ "missing": [
+  "invoice.period_start",
+  "invoice.period_end",
+  "invoice.period_start",
+  "invoice.period_end",
+  "invoice.tax"
+ ],
+ "sources": [
+  "inbox/invoice-software.txt",
+  "inbox/invoice-print.txt"
+ ],
+ "task": "invoice"
+}
