@@ -87,6 +87,25 @@ def test_senders_map_under_any_name_is_not_a_profile(tmp_path, monkeypatch):
     assert fx.profile_names() == ["invoice"]
     with pytest.raises(fx.ProfileError, match="not a profile"):
         fx.load_profile("known_billers")
+    monkeypatch.chdir(tmp_path)  # a relative senders_file names the same file
+    monkeypatch.setattr(fx, "VENDORS_FILE", "known_billers.json")
+    assert fx.profile_names() == ["invoice"]
+    with pytest.raises(fx.ProfileError, match="not a profile"):
+        fx.load_profile("known_billers")
+    elsewhere = tmp_path.parent / (tmp_path.name + "-maps")
+    elsewhere.mkdir()
+    (elsewhere / "link.json").symlink_to(tmp_path / "known_billers.json")  # senders_file is a link to it
+    monkeypatch.setattr(fx, "VENDORS_FILE", str(elsewhere / "link.json"))
+    assert fx.profile_names() == ["invoice"]
+    with pytest.raises(fx.ProfileError, match="not a profile"):
+        fx.load_profile("known_billers")
+    (elsewhere / "real.json").write_text(json.dumps({"vendors": []}))  # the profiles folder holds a link to it
+    (tmp_path / "linked_map.json").symlink_to(elsewhere / "real.json")
+    monkeypatch.setattr(fx, "VENDORS_FILE", str(elsewhere / "real.json"))
+    assert fx.profile_names() == ["invoice", "known_billers"]
+    with pytest.raises(fx.ProfileError, match="not a profile"):
+        fx.load_profile("linked_map")
+    (tmp_path / "linked_map.json").unlink()
     monkeypatch.setattr(fx, "VENDORS_FILE", None)  # no map configured: the file is just another JSON file
     assert fx.profile_names() == ["invoice", "known_billers"]
     (tmp_path / "vendors.json").write_text(json.dumps({"vendors": []}))  # the fallback name, never listed
