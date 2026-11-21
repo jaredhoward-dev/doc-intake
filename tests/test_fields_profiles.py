@@ -828,6 +828,17 @@ def test_ordinary_amounts_still_extract(text, want):
     ("2030-01-14", 5, 10, "ref", True),          # "01-14" out of an ISO date
     ("Due 2030-01-14", 4, 8, "year", True),      # its year
     # a bare digit run glued by a dash or slash to more digits is a piece of one number
+    ("Statement 12/2030", 13, 17, "year", False),  # a month and year
+    ("Statement 12/2030", 10, 12, "count", True),  # its month, beside a four-digit piece
+    ("Page 3/10", 7, 9, "count", False),  # page x of y
+    ("Page 3/10", 5, 6, "count", False),
+    ("Net 15/30", 7, 9, "count", False),  # payment terms
+    ("Rate 8/10", 7, 9, "count", False),  # a ratio
+    ("Term 12-24 months", 8, 10, "count", False),  # a range
+    ("Reading 100-200 kWh", 12, 15, "count", False),
+    ("Exp 12/30", 7, 9, "count", False),  # a card's month and year, as printed
+    ("Acct 123-456-2030", 13, 17, "year", True),  # a year-shaped end of a three-piece number
+    ("Acct 1-12/2030", 10, 14, "year", True),  # a month and year joined on again
     ("Acct 12-345678", 8, 14, "count", True),
     ("Acct 123-456-7890", 13, 17, "count", True),
     ("Acct 123-456-7890", 5, 8, "count", True),
@@ -928,3 +939,13 @@ def test_free_text_types_skip_the_check(ftype, page, value):
 def test_dash_comma_and_slash_neighbours_still_extract(ftype, page, value):
     got, dropped = _run(_one(ftype, [page.split(":")[0].lower()]), page)
     assert got == {"v": fx.normalize(ftype, value)} and dropped == {}
+
+
+def test_a_year_after_a_month_and_a_usage_range():
+    # "Statement 12/2030": a month and year, so a year field takes the year
+    assert _run(_one("year", ["statement"]), "Statement 12/2030\n") == ({"v": "2030"}, {})
+    # "100-200 kWh" is a range, not one reading: the usage type never starts after a dash, so the field is missing
+    # rather than taking 200 kWh; a single reading beside it is taken
+    usage = _one("usage", ["reading"])
+    assert _run(usage, "Reading 100-200 kWh\n") == ({}, {})
+    assert _run(usage, "Reading 200 kWh\n") == ({"v": "200 kWh"}, {})
