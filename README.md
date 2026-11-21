@@ -9,7 +9,7 @@ pulls out only the fields a profile allows. You preview those fields and approve
 on your own desktop; only then can the assistant read them, and every read is logged.
 
 - **Everything runs locally.** Standard-library Python plus optional system tools (`pdftotext`,
-  `pdftoppm`, `tesseract`, ImageMagick 7, zxing-cpp). An optional local model through your own
+  `pdftoppm`, `tesseract`, ImageMagick 7 or 6, zxing-cpp). An optional local model through your own
   Ollama on `127.0.0.1` fills fields the patterns missed; nothing is sent anywhere.
 - **Allowlisted fields only.** A profile names the fields to take; each value is checked against the
   detectors and dropped (and counted) if it overlaps one.

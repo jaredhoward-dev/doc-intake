@@ -25,7 +25,7 @@ Walk these in order. Stop at about five findings; quality over quantity.
 ### Correctness
 
 - Does the diff do what the task asked? A bug fix fixes the cause, not the symptom.
-- Edge cases that recur here: an empty inbox, a file name with spaces or unicode, a symlink or dot file in the inbox (ignored by contract), a file that vanished mid-scan, a re-run of `scan` (idempotent; never overwrites), a file past the reader's memory or time cap (reported unscreened, never passed as safe), a missing optional tool (`pdftotext`, `tesseract`, `magick`, `zxingcpp`), no display for the approval dialog.
+- Edge cases that recur here: an empty inbox, a file name with spaces or unicode, a symlink or dot file in the inbox (ignored by contract), a file that vanished mid-scan, a re-run of `scan` (idempotent; never overwrites), a file past the reader's memory or time cap (reported unscreened, never passed as safe), a missing optional tool (`pdftotext`, `tesseract`, `magick` or 6's `convert` and `identify`, `zxingcpp`), no display for the approval dialog.
 - Could each new test pass with the bug still present? If so, the assertion isn't load-bearing.
 - **Fix bugs, don't code around them.** Flag with high severity: a bare `except` or `except Exception: pass` added to silence a path; a caller special-casing a missing branch in the callee; a test loosened, skipped or given a sleep to go green; a `skipif` on a real bug rather than a missing optional tool.
 
@@ -57,7 +57,7 @@ From `CLAUDE.md`, `CONTRIBUTING.md` and `docs/engine.md`:
 
 - The surface the diff touched has the test it warrants (`test-gap-checker` does the full mapping; flag only the obvious gap, with a file name).
 - A change to `doc_intake/detect.py` or the code that relies on it gets `detector-reviewer` too; say so in a Note if the caller didn't run it.
-- A test that needs `pdftotext`, `tesseract` or `zxingcpp` skips cleanly when it's missing.
+- A test that needs `pdftotext`, `tesseract`, ImageMagick (`reader.magick_cmd()`) or `zxingcpp` skips cleanly when it's missing.
 
 ### Scope
 

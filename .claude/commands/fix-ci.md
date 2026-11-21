@@ -26,7 +26,7 @@ Fix the failing CI run `$ARGUMENTS`. Find the real cause, fix it at the root, ad
 
 - **Genuine defect**: the code is wrong. Fix it; pin it with a test.
 - **Test bug**: the test asserts the wrong thing, races in its own setup, or leaks out of its throwaway HOME. Fix the test properly, not by loosening it.
-- **Environment difference**: CI runs Ubuntu 24.04 with apt's Python 3.12, `python3-pytest`, `poppler-utils` and `tesseract-ocr`: no pip, no venv, no ImageMagick 7 (`magick`), no zxing, no local model. A test that assumes a missing tool, a newer Python, a local model, macOS or the local timezone is a test bug: it should skip cleanly on a missing optional dependency or set what it needs.
+- **Environment difference**: CI runs Ubuntu 24.04 with apt's Python 3.12, `python3-pytest`, `poppler-utils`, `tesseract-ocr` and `imagemagick` (version 6: `convert` and `identify`, no `magick`): no pip, no venv, no zxing, no local model. A test that assumes a missing tool, a newer Python, a local model, macOS or the local timezone is a test bug: it should skip cleanly on a missing optional dependency or set what it needs.
 - **Infra flake**: make the step deterministic or remove the fragile dependency; don't retry it.
 
 ### 3. Read the context before changing it
@@ -35,7 +35,7 @@ Workflow files carry comments explaining why a step has its shape. Read them, an
 
 ### 4. Reproduce locally, then verify the fix
 
-Run the command CI ran, narrowed to the failing area: `python3 -I -m pytest -q tests/test_<area>.py`, with `TZ=America/New_York` if dates are involved. If CI's condition differs from this machine (Linux memory cap, no `magick`, no model), reproduce that condition rather than assuming. Confirm the failure reproduces before the fix and is gone after; report the command and its result. Don't run the full suite locally; CI does.
+Run the command CI ran, narrowed to the failing area: `python3 -I -m pytest -q tests/test_<area>.py`, with `TZ=America/New_York` if dates are involved. If CI's condition differs from this machine (Linux memory cap, ImageMagick 6 not 7, no model), reproduce that condition rather than assuming. Confirm the failure reproduces before the fix and is gone after; report the command and its result. Don't run the full suite locally; CI does.
 
 For a workflow change, validate the YAML: `python3 -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" <workflow>`.
 

@@ -5,4 +5,6 @@
 - `doc_intake/` stays stdlib-only and host-agnostic (see `CLAUDE.md`).
 - Tests: `python3 -I -m pytest -q tests`, and a test that fails without your
   change.
+- A version bump changes both `pyproject.toml` and `doc_intake.__version__`; `tests/test_packaging.py`
+  checks they match.
 - Pull request titles follow Conventional Commits (`feat:`, `fix:`, `docs:`, ...).

@@ -15,14 +15,15 @@ accounting logic to itself.
 ## Status
 
 Stage 2: the engine runs on its own through `python3 -m doc_intake` over a TOML config ([cli.md](cli.md)), or
-inside a host that calls `configure()`. The interfaces below may still change before a packaged release.
+inside a host that calls `configure()`. It installs with pip (`pyproject.toml`), which adds a `doc-intake` command.
+The interfaces below may still change before the tagged `v0.1.0` release.
 
 ## What it does
 
 | Module | What |
 | --- | --- |
-| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands |
-| `config.py` | `configure()`: the records root, inbox, state folder, profiles, known-senders map, routing hook, model, private terms, and the few messages that name the host's setup |
+| `cli.py`, `__main__.py` | The standalone CLI: reads a TOML config (`--config`, `$DOC_INTAKE_CONFIG`, `./doc-intake.toml`), calls `configure()` and runs the commands; installed as the `doc-intake` command (`doc_intake.cli:main`) |
+| `config.py` | `configure()`: the records root, inbox, state folder, profiles, known-senders map, routing hook, model, private terms, `today` (the date document dates are judged against), and the few messages that name the host's setup |
 | `places.py` | The root, inbox and state folder; private writes (folders `0700`, files `0600`, atomic); the index of what was filed or held; the access log; sha256; moves that never overwrite |
 | `detect.py` | Sensitive-value detectors and redaction: counts per kind, never values. Checksums (Luhn, ABA, VIN) cut false positives |
 | `reader.py` | Type sniffing, `pdftotext`, OCR one page at a time, `.eml` bodies, barcodes; each file read in a forked child under a memory cap and a timeout |

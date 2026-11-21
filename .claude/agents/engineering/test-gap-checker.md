@@ -43,7 +43,9 @@ Tests run under pytest (some are `unittest.TestCase` classes, which pytest also 
 | `doc_intake/preview.py` | `tests/test_review.py`, `tests/test_snapshots.py` |
 | `doc_intake/locate.py`, `snapshots.py` | `tests/test_snapshots.py` |
 | `doc_intake/pairs.py` | `tests/test_pairs.py` |
-| `doc_intake/config.py`, `places.py`, `__init__.py` | `tests/test_smoke.py`, `tests/test_host.py`, plus the area test for the behaviour changed |
+| `doc_intake/config.py`, `places.py`, `__init__.py` | `tests/test_smoke.py`, `tests/test_host.py`, plus the area test for the behaviour changed; `config.today` in `tests/test_today.py` |
+| `pyproject.toml`, `doc_intake.__version__`, `doc_intake/cli.py` entry point | `tests/test_packaging.py` |
+| `doc_intake/cli.py` (config, routing, commands) | `tests/test_cli.py` |
 | Any new import or host-specific word in `doc_intake/` | `tests/test_generic.py`, `tests/test_engine_generic.py` |
 | `tests/host.py`, `tests/conftest.py`, `tests/helpers.py` | every test (they're shared); at least `tests/test_host.py` |
 | A user-visible output change | `tests/test_golden.py`: `tests/fixtures/golden/expected/` regenerated with `GOLDEN_UPDATE=1`, and the diff of `expected/` matches the intent |
@@ -56,7 +58,7 @@ What each surface warrants:
 - **Fields**: a value outside the profile never reaches the task file; a value overlapping a detector is dropped and counted.
 - **Moves and state**: the move never overwrites; folders `0700`, files `0600` (`mode()` in `tests/helpers.py`); a re-run gives the same result.
 - **The reader**: a file past a cap is reported unscreened, never passed as safe.
-- **Optional tools** (`pdftotext`, `tesseract`, `zxingcpp`): the test skips with a reason when missing, so CI still runs the rest.
+- **Optional tools** (`pdftotext`, `tesseract`, ImageMagick via `reader.magick_cmd()`, `zxingcpp`): the test skips with a reason when missing, so CI still runs the rest.
 
 ### 4. Cross-reference against the tests in the diff
 
