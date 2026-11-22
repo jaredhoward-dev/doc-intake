@@ -24,6 +24,7 @@ You review changes to the sensitive-value detectors. `detect.py` is the engine's
 
 ### False negatives (a value not counted or not redacted)
 
+- The change must be additive on `_base_find_spans`: nothing it removes, clips or re-tags may show a digit the base hid. `tests/test_detect_differential.py` must still pass with `tests/_detect_r5.py` and its pin untouched; a diff that edits either is Critical unless the pull request says it moves the baseline on purpose. A new shape belongs in the differential corpus as well as in `tests/test_detect_scan.py`.
 - For every pattern the diff adds or changes, think through the shapes a real document uses: dashes, spaces, dots, no separators; a label before it ("Acct #", "SSN:", "Routing No.") or no label; the value at the start or end of a line, after a column gap in `pdftotext -layout` output, wrapped across lines, next to `$` or `-`; upper and lower case for labelled kinds.
 - The lookarounds (`(?<![\d-])`, `(?![\d-])`, `\b`) must not hide a value glued to punctuation or a letter OCR inserted.
 - A tightened checksum or prefix rule that drops a real card brand, a valid ABA prefix range or an ITIN group is a false negative.
