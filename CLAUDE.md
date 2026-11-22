@@ -13,6 +13,11 @@ working on this repo and to using it.
   (test card numbers, example routing numbers). No real path, name or value in any commit.
 - **Stdlib only** in `doc_intake/` (plus optional `zxingcpp` and `PIL`, imported inside functions).
   `tests/test_generic.py` enforces it.
+- **Detector changes only ever hide more.** `detect.find_spans` is the shipped resolution kept whole
+  (`_base_find_spans`) plus additive spans; `tests/test_detect_differential.py` checks it against a hash-pinned
+  frozen copy (`tests/_detect_r5.py`). Don't patch shapes into the base: in round 6 that took three
+  patch-and-review cycles, each showing a digit the base hid through redact's re-scans. Moving the frozen
+  copy's pin is its own deliberate pull request.
 - **No host specifics in the engine**: no folder layout, vendor list, bookkeeping or locale rules.
   A host passes those in through `configure()`.
 - Tests: `python3 -I -m pytest -q tests`. Prefer targeted tests locally; CI runs
